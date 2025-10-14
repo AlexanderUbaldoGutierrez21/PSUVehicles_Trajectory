@@ -77,35 +77,31 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
     for vid, group in df_segment.groupby("vehicle_id"):
         group = group.sort_values("time")
         if len(group) > 1:
-            # FIND ENTRY AND EXIT POINTS FOR EACH VEHICLE
-            entry_idx = group["location"].idxmin()  # First point in segment
-            exit_idx = group["location"].idxmax()   # Last point in segment
-
-            entry_time = group.loc[entry_idx, "time"]
-            exit_time = group.loc[exit_idx, "time"]
-            entry_loc = group.loc[entry_idx, "location"]
-            exit_loc = group.loc[exit_idx, "location"]
-
-            # TIME SPENT IN SEGMENT
+            # TIME SPENT IN SEGMENT: from first to last point in the filtered data
+            entry_time = group.iloc[0]["time"]
+            exit_time = group.iloc[-1]["time"]
             time_spent = exit_time - entry_time
             if time_spent > 0:
                 total_time_spent += time_spent
 
-            # DISTANCE TRAVELED IN SEGMENT
-            distance_traveled = exit_loc - entry_loc
-            if distance_traveled > 0:
-                total_distance_traveled += distance_traveled
+            # DISTANCE TRAVELED IN SEGMENT: sum of absolute distances between consecutive points
+            loc_diff = np.diff(group["location"])
+            veh_distances = np.abs(loc_diff)
+            total_distance_traveled += np.sum(veh_distances)
 
-    # DENSITY (VEH/MI) = TOTAL TIME SPENT (HR) / SEGMENT LENGTH (MI)
-    total_time_spent_hr = total_time_spent / 3600.0
-    density = total_time_spent_hr / segment_length_mi if segment_length_mi > 0 else 0
+    # TIME PERIOD IN HOURS
+    time_period_hr = (time_max - time_min) / 3600.0
+
+    # GENERALIZED FLOW (VEH/HR) = NUMBER OF VEHICLES / TIME PERIOD
+    flow = N / time_period_hr if time_period_hr > 0 else 0
 
     # AVERAGE SPEED (MI/HR) = TOTAL DISTANCE TRAVELED (MI) / TOTAL TIME SPENT (HR)
+    total_time_spent_hr = total_time_spent / 3600.0
     total_distance_traveled_mi = total_distance_traveled / 5280.0
     avg_speed = total_distance_traveled_mi / total_time_spent_hr if total_time_spent_hr > 0 else 0.0
 
-    # FLOW (VEH/HR) = DENSITY * AVG SPEED
-    flow = density * avg_speed
+    # DENSITY (VEH/MI) = GENERALIZED FLOW / AVERAGE SPEED
+    density = flow / avg_speed if avg_speed > 0 else 0
 
     return {
         "N": N,
@@ -125,7 +121,7 @@ with col1:
 with col2:
     st.metric("Density (veh/mi)", f"{metrics['Density']:.2f}")
 with col3:
-    st.metric("Flow (veh/hr)", f"{metrics['Flow']:.2f}")
+    st.metric("Generalized Flow (veh/hr)", f"{metrics['Flow']:.2f}")
 with col4:
     st.metric("Avg Speed (mi/hr)", f"{metrics['Avg_Speed']:.2f}")
 
