@@ -31,7 +31,7 @@ df.columns = ["time", "vehicle_id", "vehicle_type", "location"]
 st.sidebar.image("PSU_Logo2.png", width=125)
 st.sidebar.header("⚪ Display Options")
 
-# Add location and time range inputs
+# ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
 loc_min = st.sidebar.number_input("Min Location (ft)", value=100.0, step=10.0)
 loc_max = st.sidebar.number_input("Max Location (ft)", value=500.0, step=10.0)
@@ -47,7 +47,7 @@ selected_ids = st.sidebar.multiselect(
     default=all_ids if select_all else []
 )
 
-# Apply segment filters first, then vehicle selection
+# APPLY SEGMENT FILTERS FIRST, THEN VEHICLE SELECTION 
 segment_filtered_df = df[
     (df["location"] >= loc_min) &
     (df["location"] <= loc_max) &
@@ -56,38 +56,55 @@ segment_filtered_df = df[
 ]
 filtered_df = segment_filtered_df[segment_filtered_df["vehicle_id"].isin(selected_ids)]
 
-# Function to compute traffic metrics
+# FUNCTION TO COMPUTE TRAFFIC METRICS
 def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
     if df_segment.empty:
         return {"N": 0, "Density": 0.0, "Flow": 0.0, "Avg_Speed": 0.0}
 
-    # Vehicle count (N)
+    # VEHICLE COUNT (N)
     N = len(df_segment["vehicle_id"].unique())
 
-    # Segment length in miles (1 mile = 5280 ft)
+    # SEGMENT LENGTH IN MILES (1 MILE = 5280 ft)
     segment_length_mi = (loc_max - loc_min) / 5280.0
 
-    # Time period in hours
+    # TIME PERIOD IN HOURS
     time_period_hr = (time_max - time_min) / 3600.0
 
-    # Density (veh/mi)
-    density = N / segment_length_mi if segment_length_mi > 0 else 0
+    # COMPUTE TOTAL DISTANCE TRAVELED (TDT) AND TOTAL TIME SPENT (TTS) IN SEGMENT
+    total_distance_traveled = 0.0  # in ft
+    total_time_spent = 0.0  # in seconds
 
-    # Compute average speed (mi/hr) from trajectories
-    speeds = []
     for vid, group in df_segment.groupby("vehicle_id"):
         group = group.sort_values("time")
         if len(group) > 1:
-            # Calculate speed between consecutive points
-            loc_diff = np.diff(group["location"])  # ft
-            time_diff = np.diff(group["time"])  # s
-            # Convert to mi/hr: (ft/s) * (3600 s/hr) / (5280 ft/mi)
-            veh_speeds = (loc_diff / time_diff) * (3600 / 5280)
-            speeds.extend(veh_speeds[veh_speeds > 0])  # Only positive speeds
+            # FIND ENTRY AND EXIT POINTS FOR EACH VEHICLE
+            entry_idx = group["location"].idxmin()  # First point in segment
+            exit_idx = group["location"].idxmax()   # Last point in segment
 
-    avg_speed = np.mean(speeds) if speeds else 0.0
+            entry_time = group.loc[entry_idx, "time"]
+            exit_time = group.loc[exit_idx, "time"]
+            entry_loc = group.loc[entry_idx, "location"]
+            exit_loc = group.loc[exit_idx, "location"]
 
-    # Flow (veh/hr) = Density * Avg Speed
+            # TIME SPENT IN SEGMENT
+            time_spent = exit_time - entry_time
+            if time_spent > 0:
+                total_time_spent += time_spent
+
+            # DISTANCE TRAVELED IN SEGMENT
+            distance_traveled = exit_loc - entry_loc
+            if distance_traveled > 0:
+                total_distance_traveled += distance_traveled
+
+    # DENSITY (VEH/MI) = TOTAL TIME SPENT (HR) / SEGMENT LENGTH (MI)
+    total_time_spent_hr = total_time_spent / 3600.0
+    density = total_time_spent_hr / segment_length_mi if segment_length_mi > 0 else 0
+
+    # AVERAGE SPEED (MI/HR) = TOTAL DISTANCE TRAVELED (MI) / TOTAL TIME SPENT (HR)
+    total_distance_traveled_mi = total_distance_traveled / 5280.0
+    avg_speed = total_distance_traveled_mi / total_time_spent_hr if total_time_spent_hr > 0 else 0.0
+
+    # FLOW (VEH/HR) = DENSITY * AVG SPEED
     flow = density * avg_speed
 
     return {
@@ -97,11 +114,11 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
         "Avg_Speed": round(avg_speed, 2)
     }
 
-# Compute metrics for the segment
+# COMPUTE METRICS FOR THE SEGMENT 
 metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max)
 
-# Display traffic metrics
-st.header("📊 Traffic Flow Metrics")
+# DISPLAY TRAFFIC METRICS
+st.header("Traffic Flow Metrics")
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Vehicle Count (N)", metrics["N"])
