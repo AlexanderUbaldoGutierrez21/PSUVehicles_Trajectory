@@ -89,19 +89,17 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
             veh_distances = np.abs(loc_diff)
             total_distance_traveled += np.sum(veh_distances)
 
-    # TIME PERIOD IN HOURS
-    time_period_hr = (time_max - time_min) / 3600.0
-
-    # GENERALIZED FLOW (VEH/HR) = NUMBER OF VEHICLES / TIME PERIOD
-    flow = N / time_period_hr if time_period_hr > 0 else 0
-
     # AVERAGE SPEED (MI/HR) = TOTAL DISTANCE TRAVELED (MI) / TOTAL TIME SPENT (HR)
     total_time_spent_hr = total_time_spent / 3600.0
     total_distance_traveled_mi = total_distance_traveled / 5280.0
     avg_speed = total_distance_traveled_mi / total_time_spent_hr if total_time_spent_hr > 0 else 0.0
 
-    # DENSITY (VEH/MI) = GENERALIZED FLOW / AVERAGE SPEED
-    density = flow / avg_speed if avg_speed > 0 else 0
+    # AVERAGE DENSITY (veh/mi) = (Total Time Spent / Time Period) per mile
+    # k = (TTS / T) / L  where TTS in hours, T in hours, L in miles
+    density = ((total_time_spent_hr / time_period_hr) / segment_length_mi) if (time_period_hr > 0 and segment_length_mi > 0) else 0.0
+
+    # GENERALIZED FLOW (veh/hr) = k * u
+    flow = density * avg_speed
 
     return {
         "N": N,
