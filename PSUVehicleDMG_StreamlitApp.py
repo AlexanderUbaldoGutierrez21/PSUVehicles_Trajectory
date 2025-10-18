@@ -31,12 +31,36 @@ df.columns = ["time", "vehicle_id", "vehicle_type", "location"]
 st.sidebar.image("PSU_Logo2.png", width=125)
 st.sidebar.header("⚪ Display Options")
 
+# COMPUTE FULL DATA RANGE
+full_loc_min = df["location"].min()
+full_loc_max = df["location"].max()
+full_time_min = df["time"].min()
+full_time_max = df["time"].max()
+
+# ADD CLEAR SEGMENTS CHECKBOX
+clear_segments = st.sidebar.checkbox("Clear Segments", value=False)
+
+# SET DEFAULT VALUES BASED ON CHECKBOX
+if clear_segments:
+    loc_min_val = full_loc_min
+    loc_max_val = full_loc_max
+    time_min_val = full_time_min
+    time_max_val = full_time_max
+else:
+    loc_min_val = 100.0
+    loc_max_val = 500.0
+    time_min_val = 60.0
+    time_max_val = 180.0
+
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
-loc_min = st.sidebar.number_input("Min Location (ft)", value=100.0, step=10.0)
-loc_max = st.sidebar.number_input("Max Location (ft)", value=500.0, step=10.0)
-time_min = st.sidebar.number_input("Min Time (seconds)", value=60.0, step=10.0)
-time_max = st.sidebar.number_input("Max Time (seconds)", value=180.0, step=10.0)
+loc_min = st.sidebar.number_input("Min Location (ft)", value=loc_min_val, step=10.0, disabled=clear_segments)
+loc_max = st.sidebar.number_input("Max Location (ft)", value=loc_max_val, step=10.0, disabled=clear_segments)
+time_min = st.sidebar.number_input("Min Time (seconds)", value=time_min_val, step=10.0, disabled=clear_segments)
+time_max = st.sidebar.number_input("Max Time (seconds)", value=time_max_val, step=10.0, disabled=clear_segments)
+
+# ADD FREE-FLOW TRAVEL TIME INPUT
+free_flow_tt = st.sidebar.number_input("Free-Flow Travel Time (seconds)", value=7.9, step=0.1)
 
 all_ids = sorted(df["vehicle_id"].unique())
 select_all = st.sidebar.checkbox("Select All", value=True)
@@ -57,9 +81,9 @@ segment_filtered_df = df[
 filtered_df = segment_filtered_df[segment_filtered_df["vehicle_id"].isin(selected_ids)]
 
 # FUNCTION TO COMPUTE TRAFFIC METRICS
-def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
+def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
     if df_segment.empty:
-        return {"N": 0, "Density": 0.0, "Flow": 0.0, "Avg_Speed": 0.0}
+        return {"N": 0, "Density": 0.0, "Flow": 0.0, "Avg_Speed": 0.0, "Max_Accumulation": 0, "Max_Travel_Time": 0.0, "Avg_Delay": 0.0}
 
     # VEHICLE COUNT (N)
     N = len(df_segment["vehicle_id"].unique())
@@ -73,6 +97,8 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
     # COMPUTE TOTAL DISTANCE TRAVELED (TDT) AND TOTAL TIME SPENT (TTS) IN SEGMENT
     total_distance_traveled = 0.0  # in ft
     total_time_spent = 0.0  # in seconds
+    travel_times = []
+    delays = []
 
     for vid, group in df_segment.groupby("vehicle_id"):
         group = group.sort_values("time")
@@ -83,6 +109,10 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
             time_spent = exit_time - entry_time
             if time_spent > 0:
                 total_time_spent += time_spent
+                travel_times.append(time_spent)
+                delay = time_spent - free_flow_tt
+                if delay > 0:
+                    delays.append(delay)
 
             # DISTANCE TRAVELED IN SEGMENT: sum of absolute distances between consecutive points
             loc_diff = np.diff(group["location"])
@@ -101,15 +131,68 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max):
     # GENERALIZED FLOW (veh/hr) = k * u
     flow = density * avg_speed
 
+    # MAXIMUM ACCUMULATION: Maximum number of vehicles in segment at any time
+    # For queuing diagram, accumulation is the difference between input and output
+    # But here, max accumulation is the max number of vehicles present simultaneously
+    time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second bins
+    max_accumulation = 0
+    for t in time_bins:
+        vehicles_at_t = df_segment[(df_segment["time"] >= t) & (df_segment["time"] < t + 1)]["vehicle_id"].nunique()
+        max_accumulation = max(max_accumulation, vehicles_at_t)
+
+    # MAXIMUM TRAVEL TIME
+    max_travel_time = max(travel_times) if travel_times else 0.0
+
+    # AVERAGE DELAY
+    avg_delay = np.mean(delays) if delays else 0.0
+
     return {
         "N": N,
         "Density": round(density, 2),
         "Flow": round(flow, 2),
-        "Avg_Speed": round(avg_speed, 2)
+        "Avg_Speed": round(avg_speed, 2),
+        "Max_Accumulation": max_accumulation,
+        "Max_Travel_Time": round(max_travel_time, 2),
+        "Avg_Delay": round(avg_delay, 2)
     }
 
-# COMPUTE METRICS FOR THE SEGMENT 
-metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max)
+# FUNCTION TO COMPUTE CUMULATIVE INPUT, OUTPUT, AND VIRTUAL ARRIVAL
+def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
+    if df_segment.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    # Identify entry and exit points
+    entry_df = df_segment.groupby("vehicle_id").first().reset_index()
+    exit_df = df_segment.groupby("vehicle_id").last().reset_index()
+
+    # Cumulative input: vehicles that have entered by time t
+    input_times = entry_df["time"].sort_values()
+    input_cum = []
+    for t in np.arange(time_min, time_max + 1, 1):
+        cum_input = (input_times <= t).sum()
+        input_cum.append({"time": t, "cumulative": cum_input})
+
+    # Cumulative output: vehicles that have exited by time t
+    output_times = exit_df["time"].sort_values()
+    output_cum = []
+    for t in np.arange(time_min, time_max + 1, 1):
+        cum_output = (output_times <= t).sum()
+        output_cum.append({"time": t, "cumulative": cum_output})
+
+    # Virtual arrival curve: cumulative input shifted by free-flow travel time
+    virtual_arrival_cum = []
+    for t in np.arange(time_min, time_max + 1, 1):
+        virtual_t = t - free_flow_tt
+        if virtual_t >= time_min:
+            cum_virtual = (input_times <= virtual_t).sum()
+        else:
+            cum_virtual = 0
+        virtual_arrival_cum.append({"time": t, "cumulative": cum_virtual})
+
+    return pd.DataFrame(input_cum), pd.DataFrame(output_cum), pd.DataFrame(virtual_arrival_cum)
+
+# COMPUTE METRICS FOR THE SEGMENT
+metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
 
 # DISPLAY TRAFFIC METRICS
 st.header("Traffic Flow Metrics")
@@ -122,6 +205,14 @@ with col3:
     st.metric("Generalized Flow (veh/hr)", f"{metrics['Flow']:.2f}")
 with col4:
     st.metric("Avg Speed (mi/hr)", f"{metrics['Avg_Speed']:.2f}")
+
+col5, col6, col7 = st.columns(3)
+with col5:
+    st.metric("Max Accumulation", metrics["Max_Accumulation"])
+with col6:
+    st.metric("Max Travel Time (s)", f"{metrics['Max_Travel_Time']:.2f}")
+with col7:
+    st.metric("Avg Delay (s)", f"{metrics['Avg_Delay']:.2f}")
 
 # PLOT
 base_colors = [
@@ -147,3 +238,41 @@ fig.update_layout(
 
 # DISPLAY
 st.plotly_chart(fig, use_container_width=True)
+
+# COMPUTE CUMULATIVE CURVES
+input_cum_df, output_cum_df, virtual_arrival_cum_df = compute_cumulative_curves(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
+
+# PLOT INPUT-OUTPUT AND QUEUING DIAGRAM
+if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cum_df.empty:
+    st.header("Input-Output and Queuing Diagram")
+
+    # Create the plot
+    fig2 = px.line(
+        input_cum_df,
+        x="time",
+        y="cumulative",
+        title="Cumulative Input, Output, and Virtual Arrival",
+        labels={"time": "Time (seconds)", "cumulative": "Cumulative Vehicles"}
+    )
+
+    # Add output curve
+    fig2.add_trace(
+        px.line(output_cum_df, x="time", y="cumulative").data[0]
+    )
+
+    # Add virtual arrival curve
+    fig2.add_trace(
+        px.line(virtual_arrival_cum_df, x="time", y="cumulative").data[0]
+    )
+
+    # Update traces for clarity
+    fig2.data[0].name = "Cumulative Input"
+    fig2.data[1].name = "Cumulative Output"
+    fig2.data[2].name = "Virtual Arrival (at 500 ft)"
+
+    fig2.update_layout(
+        legend=dict(title="Curves"),
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig2, use_container_width=True)
