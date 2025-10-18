@@ -206,13 +206,15 @@ with col3:
 with col4:
     st.metric("Avg Speed (mi/hr)", f"{metrics['Avg_Speed']:.2f}")
 
-col5, col6, col7 = st.columns(4)
+col5, col6, col7, col8 = st.columns(4)
 with col5:
     st.metric("Max Accumulation (veh)", metrics["Max_Accumulation"])
 with col6:
     st.metric("Max Travel Time (s)", f"{metrics['Max_Travel_Time']:.2f}")
 with col7:
     st.metric("Avg Delay (s)", f"{metrics['Avg_Delay']:.2f}")
+with col8:
+    st.empty()  # Empty column for alignment
 
 # PLOT
 base_colors = [
