@@ -50,7 +50,7 @@ else:
     loc_min_val = 100.0
     loc_max_val = 500.0
     time_min_val = 0.0
-    time_max_val = 450.0
+    time_max_val = 400.0
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
