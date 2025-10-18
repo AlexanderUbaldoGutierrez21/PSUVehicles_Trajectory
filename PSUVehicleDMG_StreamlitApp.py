@@ -271,13 +271,52 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     fig2.data[0].name = "Cumulative Input"
     fig2.data[0].line.color = "#0D1B2A"
     fig2.data[1].name = "Cumulative Output"
-    fig2.data[1].line.color = "#2A6F97"
+    fig2.data[1].line.color = "#415A77"
     fig2.data[2].name = "Virtual Arrival (at 500 ft)"
-    fig2.data[2].line.color = "#7AD0D9"
+    fig2.data[2].line.color = "#778DA9"
 
     fig2.update_layout(
         legend=dict(title="Curves"),
         hovermode="x unified"
     )
+
+    # Add on-chart text labels near the end of each curve
+    try:
+        # end points for each cumulative curve
+        x_in = input_cum_df["time"].iloc[-1]
+        y_in = input_cum_df["cumulative"].iloc[-1]
+        x_out = output_cum_df["time"].iloc[-1]
+        y_out = output_cum_df["cumulative"].iloc[-1]
+        x_virt = virtual_arrival_cum_df["time"].iloc[-1]
+        y_virt = virtual_arrival_cum_df["cumulative"].iloc[-1]
+
+        # pixel shifts to avoid overlapping the line tips
+        fig2.add_annotation(
+            x=x_in, y=y_in,
+            text="Cumulative Input (veh)",
+            showarrow=False,
+            font=dict(color="#0D1B2A", size=12),
+            xanchor="left", yanchor="middle",
+            xshift=8
+        )
+        fig2.add_annotation(
+            x=x_out, y=y_out,
+            text="Cumulative Output (veh)",
+            showarrow=False,
+            font=dict(color="#2A6F97", size=12),
+            xanchor="left", yanchor="middle",
+            xshift=8
+        )
+        fig2.add_annotation(
+            x=x_virt, y=y_virt,
+            text="Virtual Arrival (500ft)",
+            showarrow=False,
+            font=dict(color="#7AD0D9", size=12),
+            xanchor="left", yanchor="middle",
+            xshift=8
+        )
+    except Exception:
+        # If anything goes wrong with annotations, continue without breaking the app
+        pass
 
     st.plotly_chart(fig2, use_container_width=True)
