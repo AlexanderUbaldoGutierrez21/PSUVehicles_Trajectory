@@ -271,9 +271,9 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     fig2.data[0].name = "Cumulative Input"
     fig2.data[0].line.color = "#0D1B2A"
     fig2.data[1].name = "Cumulative Output"
-    fig2.data[1].line.color = "#415A77"
+    fig2.data[1].line.color = "#2A6F97"
     fig2.data[2].name = "Virtual Arrival (at 500 ft)"
-    fig2.data[2].line.color = "#778DA9"
+    fig2.data[2].line.color = "#7AD0D9"
 
     fig2.update_layout(
         legend=dict(title="Curves"),
