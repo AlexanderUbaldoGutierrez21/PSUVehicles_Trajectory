@@ -244,9 +244,9 @@ st.plotly_chart(fig, use_container_width=True)
 # COMPUTE CUMULATIVE CURVES
 input_cum_df, output_cum_df, virtual_arrival_cum_df = compute_cumulative_curves(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
 
-# PLOT INPUT-OUTPUT AND QUEUING DIAGRAM
+# PLOT INPUT-OUTPUT AND QUEUING SCENARIO
 if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cum_df.empty:
-    st.header("Input-Output and Queuing Diagram")
+    st.header("Input-Output and Queuing Scenario")
 
     # CREATE THE PLOT
     fig2 = px.line(
