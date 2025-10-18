@@ -50,7 +50,7 @@ else:
     loc_min_val = 100.0
     loc_max_val = 500.0
     time_min_val = 0.0
-    time_max_val = 400.0
+    time_max_val = 450.0
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
@@ -280,43 +280,35 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         hovermode="x unified"
     )
 
-    # Add on-chart text labels near the end of each curve
-    try:
-        # end points for each cumulative curve
-        x_in = input_cum_df["time"].iloc[-1]
-        y_in = input_cum_df["cumulative"].iloc[-1]
-        x_out = output_cum_df["time"].iloc[-1]
-        y_out = output_cum_df["cumulative"].iloc[-1]
-        x_virt = virtual_arrival_cum_df["time"].iloc[-1]
-        y_virt = virtual_arrival_cum_df["cumulative"].iloc[-1]
+    # Add on-chart text labels at the top of the chart
+    y_max = max(input_cum_df["cumulative"].max(), output_cum_df["cumulative"].max(), virtual_arrival_cum_df["cumulative"].max())
+    x_range = time_max - time_min
 
-        # pixel shifts to avoid overlapping the line tips
-        fig2.add_annotation(
-            x=x_in, y=y_in,
-            text="Cumulative Input (veh)",
-            showarrow=False,
-            font=dict(color="#0D1B2A", size=12),
-            xanchor="left", yanchor="middle",
-            xshift=8
-        )
-        fig2.add_annotation(
-            x=x_out, y=y_out,
-            text="Cumulative Output (veh)",
-            showarrow=False,
-            font=dict(color="#2A6F97", size=12),
-            xanchor="left", yanchor="middle",
-            xshift=8
-        )
-        fig2.add_annotation(
-            x=x_virt, y=y_virt,
-            text="Virtual Arrival (500ft)",
-            showarrow=False,
-            font=dict(color="#7AD0D9", size=12),
-            xanchor="left", yanchor="middle",
-            xshift=8
-        )
-    except Exception:
-        # If anything goes wrong with annotations, continue without breaking the app
-        pass
+    fig2.add_annotation(
+        x=time_min + x_range * 0.05,
+        y=y_max * 1.1,
+        text="<span style='color:#0D1B2A'>●</span> Cumulative Input (veh)",
+        showarrow=False,
+        xanchor="left",
+    )
+    fig2.add_annotation(
+        x=time_min + x_range * 0.4,
+        y=y_max * 1.1,
+        text="<span style='color:#415A77'>●</span> Cumulative Output (veh)",
+        showarrow=False,
+        xanchor="left",
+    )
+    fig2.add_annotation(
+        x=time_min + x_range * 0.75,
+        y=y_max * 1.1,
+        text="<span style='color:#778DA9'>●</span> Virtual Arrival (500ft)",
+        showarrow=False,
+        xanchor="left",
+    )
+    fig2.update_layout(
+        showlegend=False,
+        margin=dict(t=100) # Add space at the top for labels
+    )
+
 
     st.plotly_chart(fig2, use_container_width=True)
