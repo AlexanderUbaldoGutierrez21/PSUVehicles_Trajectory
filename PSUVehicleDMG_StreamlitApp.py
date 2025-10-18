@@ -88,7 +88,7 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
     # VEHICLE COUNT (N)
     N = len(df_segment["vehicle_id"].unique())
 
-    # SEGMENT LENGTH IN MILES (1 MILE = 5280 ft)
+    # SEGMENT LENGTH IN MILES (1 MILE = 5280 FT)
     segment_length_mi = (loc_max - loc_min) / 5280.0
 
     # TIME PERIOD IN HOURS
@@ -124,17 +124,17 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
     total_distance_traveled_mi = total_distance_traveled / 5280.0
     avg_speed = total_distance_traveled_mi / total_time_spent_hr if total_time_spent_hr > 0 else 0.0
 
-    # AVERAGE DENSITY (veh/mi) = (Total Time Spent / Time Period) per mile
-    # k = (TTS / T) / L  where TTS in hours, T in hours, L in miles
+    # AVERAGE DENSITY (VEH/MI) = (TOTAL TIME SPENT / TIME PERIOD) PER MILE
+    # K = (TTS / T) / L  WHERE TTS IN HOURS, T IN HOURS, L IN MILES 
     density = ((total_time_spent_hr / time_period_hr) / segment_length_mi) if (time_period_hr > 0 and segment_length_mi > 0) else 0.0
 
-    # GENERALIZED FLOW (veh/hr) = k * u
+    # GENERALIZED FLOW (VEH/HR) = K * U
     flow = density * avg_speed
 
-    # MAXIMUM ACCUMULATION: Maximum number of vehicles in segment at any time
-    # For queuing diagram, accumulation is the difference between input and output
-    # But here, max accumulation is the max number of vehicles present simultaneously
-    time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second bins
+    # MAXIMUM ACCUMULATION: MAXIMUN NUMBER OF VEHICLES IN SEGMENT AT ANY TIME 
+    # FOR QUEUING DIAGRAM, ACCUMULATION IS THE DIFFERENCE BETWEEN INPUT AND OUTPUT 
+    # BUT HERE, MAX ACCUMULATION IS THE MAX NUMBER OF VEHICLES PRESENT SIMULTANEOUSLY 
+    time_bins = np.arange(time_min, time_max + 1, 1)  
     max_accumulation = 0
     for t in time_bins:
         vehicles_at_t = df_segment[(df_segment["time"] >= t) & (df_segment["time"] < t + 1)]["vehicle_id"].nunique()
@@ -214,7 +214,7 @@ with col6:
 with col7:
     st.metric("Avg Delay (s)", f"{metrics['Avg_Delay']:.2f}")
 with col8:
-    st.empty()  # Empty column for alignment
+    st.empty()  
 
 # PLOT
 base_colors = [
@@ -280,7 +280,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         hovermode="x unified"
     )
 
-    # Add on-chart text labels at the top of the chart
+    # ADD ON-CHART TEXT LABELS AT THE TOP OF THE CHART
     y_max = max(input_cum_df["cumulative"].max(), output_cum_df["cumulative"].max(), virtual_arrival_cum_df["cumulative"].max())
     x_range = time_max - time_min
 
