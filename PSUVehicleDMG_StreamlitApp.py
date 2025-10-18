@@ -161,25 +161,25 @@ def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, 
     if df_segment.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Identify entry and exit points
+    # IDENTIFY ENTRY AND EXITS POINTS 
     entry_df = df_segment.groupby("vehicle_id").first().reset_index()
     exit_df = df_segment.groupby("vehicle_id").last().reset_index()
 
-    # Cumulative input: vehicles that have entered by time t
+    # CUMULATIVE INPUT: VEHICLES THAT HAVE ENTERED BY TIME T
     input_times = entry_df["time"].sort_values()
     input_cum = []
     for t in np.arange(time_min, time_max + 1, 1):
         cum_input = (input_times <= t).sum()
         input_cum.append({"time": t, "cumulative": cum_input})
 
-    # Cumulative output: vehicles that have exited by time t
+    # CUMULATIVE OUTPUT: VEHICLES THAT EXITED BY THE TIME T 
     output_times = exit_df["time"].sort_values()
     output_cum = []
     for t in np.arange(time_min, time_max + 1, 1):
         cum_output = (output_times <= t).sum()
         output_cum.append({"time": t, "cumulative": cum_output})
 
-    # Virtual arrival curve: cumulative input shifted by free-flow travel time
+    # VIRTUAL ARRIVAL CURVE: CUMULATIVE INPUT SHIFTED BY FREE-FLOW TRAVEL TIME 
     virtual_arrival_cum = []
     for t in np.arange(time_min, time_max + 1, 1):
         virtual_t = t - free_flow_tt
@@ -246,32 +246,32 @@ input_cum_df, output_cum_df, virtual_arrival_cum_df = compute_cumulative_curves(
 if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cum_df.empty:
     st.header("Input-Output and Queuing Diagram")
 
-    # Create the plot
+    # CREATE THE PLOT
     fig2 = px.line(
         input_cum_df,
         x="time",
         y="cumulative",
-        title="Input-Output and Queuing Diagram (Segment 100-500 ft, Time 0-400 s)",
+        title="Input-Output and Queuing Diagram",
         labels={"time": "Time (seconds)", "cumulative": "Cumulative Vehicles"}
     )
 
-    # Add output curve
+    # ADD OUTPUT CURVE
     fig2.add_trace(
         px.line(output_cum_df, x="time", y="cumulative").data[0]
     )
 
-    # Add virtual arrival curve
+    # ADD VIRTUAL ARRIVAL CURVE
     fig2.add_trace(
         px.line(virtual_arrival_cum_df, x="time", y="cumulative").data[0]
     )
 
-    # Update traces for clarity with custom colors
+    # UPDATE TRACES FOR CLARITY WITH CUSTOM COLORS
     fig2.data[0].name = "Cumulative Input"
     fig2.data[0].line.color = "#0D1B2A"
     fig2.data[1].name = "Cumulative Output"
-    fig2.data[1].line.color = "#415A77"
+    fig2.data[1].line.color = "#2A6F97"
     fig2.data[2].name = "Virtual Arrival (at 500 ft)"
-    fig2.data[2].line.color = "#778DA9"
+    fig2.data[2].line.color = "#7AD0D9"
 
     fig2.update_layout(
         legend=dict(title="Curves"),
