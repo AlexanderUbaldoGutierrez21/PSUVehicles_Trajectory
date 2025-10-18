@@ -49,8 +49,8 @@ if clear_segments:
 else:
     loc_min_val = 100.0
     loc_max_val = 500.0
-    time_min_val = 60.0
-    time_max_val = 180.0
+    time_min_val = 0.0
+    time_max_val = 400.0
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
@@ -251,7 +251,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         input_cum_df,
         x="time",
         y="cumulative",
-        title="Cumulative Input, Output, and Virtual Arrival",
+        title="Input-Output and Queuing Diagram (Segment 100-500 ft, Time 0-400 s)",
         labels={"time": "Time (seconds)", "cumulative": "Cumulative Vehicles"}
     )
 
@@ -265,10 +265,13 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         px.line(virtual_arrival_cum_df, x="time", y="cumulative").data[0]
     )
 
-    # Update traces for clarity
+    # Update traces for clarity with custom colors
     fig2.data[0].name = "Cumulative Input"
+    fig2.data[0].line.color = "#0D1B2A"
     fig2.data[1].name = "Cumulative Output"
+    fig2.data[1].line.color = "#415A77"
     fig2.data[2].name = "Virtual Arrival (at 500 ft)"
+    fig2.data[2].line.color = "#778DA9"
 
     fig2.update_layout(
         legend=dict(title="Curves"),
