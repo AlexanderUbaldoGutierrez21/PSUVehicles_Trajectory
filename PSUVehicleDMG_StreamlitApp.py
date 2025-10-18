@@ -206,9 +206,9 @@ with col3:
 with col4:
     st.metric("Avg Speed (mi/hr)", f"{metrics['Avg_Speed']:.2f}")
 
-col5, col6, col7 = st.columns(3)
+col5, col6, col7 = st.columns(4)
 with col5:
-    st.metric("Max Accumulation", metrics["Max_Accumulation"])
+    st.metric("Max Accumulation (veh)", metrics["Max_Accumulation"])
 with col6:
     st.metric("Max Travel Time (s)", f"{metrics['Max_Travel_Time']:.2f}")
 with col7:
@@ -228,7 +228,7 @@ fig = px.line(
     color="vehicle_id",
     color_discrete_sequence=colors,
     title="💻 Time-Space Diagram",
-    labels={"time": "Time (seconds)", "location": "Location (feet)", "vehicle_id": "Vehicle ID"}
+    labels={"time": "t(seconds)", "location": "x(feet)", "vehicle_id": "Vehicle ID"}
 )
 
 fig.update_layout(
@@ -252,7 +252,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         x="time",
         y="cumulative",
         title="Input-Output and Queuing Diagram",
-        labels={"time": "Time (seconds)", "cumulative": "Cumulative Vehicles"}
+        labels={"time": "t(seconds)", "cumulative": "N(veh)"}
     )
 
     # ADD OUTPUT CURVE
