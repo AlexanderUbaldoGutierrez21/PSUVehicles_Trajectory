@@ -253,6 +253,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         input_cum_df,
         x="time",
         y="cumulative",
+        title="💻 Queuing System FIFO Diagram",
         labels={"time": "t (seconds)", "cumulative": "N (veh)"}
     )
 
