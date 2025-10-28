@@ -48,10 +48,14 @@ if clear_segments:
     time_min_val = full_time_min
     time_max_val = full_time_max
 else:
-    loc_min_val = 100.0
-    loc_max_val = 500.0
-    time_min_val = 0.0
-    time_max_val = 400.0
+    # Based on trajectory data analysis, optimal ranges for illustrating different traffic states:
+    # Free flow: early times, low density areas (0-200 ft)
+    # Capacity: medium density areas (200-600 ft)
+    # Jam: high density areas (600-900 ft)
+    loc_min_val = 0.0    # Start from beginning
+    loc_max_val = 900.0  # Cover full range for illustration
+    time_min_val = 0.0   # Start from beginning
+    time_max_val = 400.0 # Cover main traffic period
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
@@ -405,19 +409,41 @@ if fd_metrics["fitted_curve"] is not None:
         labels={"density": "Density (veh/mi)", "flow": "Flow (veh/hr)"}
     )
 
-    # ADD VERTICAL LINES FOR KEY POINTS
+    # ADD REFERENCE POINTS FOR KEY TRAFFIC FLOW PARAMETERS
     if fd_metrics["Jam_Density"] > 0:
-        # Free flow speed line (vertical at density = 0)
-        fig3.add_vline(x=0, line_dash="dash", line_color="green",
-                      annotation_text=f"Free Flow Speed: {fd_metrics['Free_Flow_Speed']:.1f} mi/hr")
+        # Free flow speed point (at density = 0)
+        fig3.add_trace(
+            px.scatter(x=[0], y=[fd_metrics["Free_Flow_Speed"]]).data[0]
+        )
+        fig3.data[-1].name = "Free Flow Speed"
+        fig3.data[-1].marker.color = "#778DA9"
+        fig3.data[-1].marker.size = 10
+        fig3.data[-1].mode = "markers+text"
+        fig3.data[-1].text = [f"Free Flow<br>{fd_metrics['Free_Flow_Speed']:.1f} mi/hr"]
+        fig3.data[-1].textposition = "top right"
 
-        # Capacity point (horizontal line)
-        fig3.add_hline(y=fd_metrics["Capacity"], line_dash="dash", line_color="blue",
-                      annotation_text=f"Capacity: {fd_metrics['Capacity']:.1f} veh/hr")
+        # Capacity point (at optimal density k_j/2)
+        optimal_density = fd_metrics["Jam_Density"] / 2
+        fig3.add_trace(
+            px.scatter(x=[optimal_density], y=[fd_metrics["Capacity"]]).data[0]
+        )
+        fig3.data[-1].name = "Capacity"
+        fig3.data[-1].marker.color = "#4FB0C6"
+        fig3.data[-1].marker.size = 10
+        fig3.data[-1].mode = "markers+text"
+        fig3.data[-1].text = [f"Capacity<br>{fd_metrics['Capacity']:.1f} veh/hr"]
+        fig3.data[-1].textposition = "top center"
 
-        # Jam density line (vertical)
-        fig3.add_vline(x=fd_metrics["Jam_Density"], line_dash="dash", line_color="red",
-                      annotation_text=f"Jam Density: {fd_metrics['Jam_Density']:.1f} veh/mi")
+        # Jam density point (at flow = 0)
+        fig3.add_trace(
+            px.scatter(x=[fd_metrics["Jam_Density"]], y=[0]).data[0]
+        )
+        fig3.data[-1].name = "Jam Density"
+        fig3.data[-1].marker.color = "#E0E1DD"
+        fig3.data[-1].marker.size = 10
+        fig3.data[-1].mode = "markers+text"
+        fig3.data[-1].text = [f"Jam Density<br>{fd_metrics['Jam_Density']:.1f} veh/mi"]
+        fig3.data[-1].textposition = "bottom center"
 
     fig3.update_traces(line=dict(color="#0D1B2A", width=3))
     fig3.update_layout(
