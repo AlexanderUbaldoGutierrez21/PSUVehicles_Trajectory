@@ -48,11 +48,10 @@ if clear_segments:
     time_min_val = full_time_min
     time_max_val = full_time_max
 else:
-    # Set to full dataset range to show all 247 trajectories by default
-    loc_min_val = 0.0    # Start from beginning
-    loc_max_val = full_loc_max  # Use actual max location from data
-    time_min_val = 0.0   # Start from beginning
-    time_max_val = full_time_max # Use actual max time from data
+    loc_min_val = 0.0    
+    loc_max_val = full_loc_max 
+    time_min_val = 0.0   
+    time_max_val = full_time_max 
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
@@ -176,11 +175,10 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     for t in time_bins:
         vehicles_at_t = df_segment[(df_segment["time"] >= t) & (df_segment["time"] < t + 1)]
         if not vehicles_at_t.empty:
-            # DENSITY: vehicles per mile at this time
+            # DENSITY: VEHICLES PER MILE AT THIS TIME
             density = len(vehicles_at_t["vehicle_id"].unique()) / segment_length_mi
 
-            # FLOW: vehicles per hour (assuming 1-second interval represents flow rate)
-            # Count vehicles that entered or exited in this interval
+            # FLOW: VEHICLES PER HOUR 
             flow = len(vehicles_at_t["vehicle_id"].unique()) / (1.0 / 3600.0)  # veh/hr
 
             if density > 0 and flow > 0:
@@ -193,13 +191,13 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     densities = np.array([d for d, f in density_flow_pairs])
     flows = np.array([f for d, f in density_flow_pairs])
 
-    # GREENSHIELDS MODEL: q = u_f * k * (1 - k/k_j)
+    # GREENSHIELDS MODEL
     def greenshields_model(k, u_f, k_j):
         return u_f * k * (1 - k / k_j)
 
     try:
-        # FIT THE MODEL
-        popt, pcov = curve_fit(greenshields_model, densities, flows, p0=[60, 200], bounds=([10, 50], [100, 500]))
+        # FIT THE MODEL - Use more reasonable bounds and initial guesses
+        popt, pcov = curve_fit(greenshields_model, densities, flows, p0=[50, 150], bounds=([20, 80], [80, 300]))
         u_f, k_j = popt
 
         # CAPACITY IS THE MAXIMUM FLOW
@@ -216,9 +214,33 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             "Capacity": round(capacity, 2),
             "fitted_curve": fitted_curve
         }
-    except:
-        # FALLBACK: SIMPLE LINEAR FIT OR DEFAULT VALUES
-        return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
+    except Exception as e:
+        # FALLBACK: Use simple estimation based on observed data
+        if len(density_flow_pairs) > 0:
+            max_density = max(d for d, f in density_flow_pairs)
+            max_flow = max(f for d, f in density_flow_pairs)
+            avg_speed = max_flow / max_density if max_density > 0 else 0
+
+            # Estimate jam density as 2x max observed density
+            jam_density = max_density * 2
+            # Estimate free flow speed as max observed speed
+            free_flow_speed = avg_speed
+            # Estimate capacity as max observed flow
+            capacity = max_flow
+
+            # CREATE SIMPLE LINEAR CURVE AS FALLBACK
+            k_fit = np.linspace(0, jam_density, 100)
+            q_fit = free_flow_speed * k_fit * (1 - k_fit / jam_density)
+            fitted_curve = pd.DataFrame({"density": k_fit, "flow": q_fit})
+
+            return {
+                "Jam_Density": round(jam_density, 2),
+                "Free_Flow_Speed": round(free_flow_speed, 2),
+                "Capacity": round(capacity, 2),
+                "fitted_curve": fitted_curve
+            }
+        else:
+            return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
 # FUNCTION TO COMPUTE CUMULATIVE INPUT, OUTPUT, AND VIRTUAL ARRIVAL
 def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
@@ -294,8 +316,6 @@ fig.update_layout(
     legend=dict(title="Vehicle ID"),
     hovermode="x unified"
 )
-
-# Time-space diagram should remain as original without annotations
 
 # DISPLAY
 st.plotly_chart(fig, use_container_width=True)
@@ -377,7 +397,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     )
     fig2.update_layout(
         showlegend=False,
-        margin=dict(t=100) # Add space at the top for labels
+        margin=dict(t=100) 
     )
 
     st.plotly_chart(fig2, use_container_width=True)
@@ -408,7 +428,7 @@ if fd_metrics["fitted_curve"] is not None:
 
     # ADD REFERENCE POINTS FOR KEY TRAFFIC FLOW PARAMETERS
     if fd_metrics["Jam_Density"] > 0:
-        # Free flow speed point (at density = 0)
+        # FREE FLOW SPEED POINT (AT DENSITY = 0)
         fig3.add_trace(
             px.scatter(x=[0], y=[fd_metrics["Free_Flow_Speed"]]).data[0]
         )
@@ -419,7 +439,7 @@ if fd_metrics["fitted_curve"] is not None:
         fig3.data[-1].text = [f"Free Flow<br>{fd_metrics['Free_Flow_Speed']:.1f} mi/hr"]
         fig3.data[-1].textposition = "top right"
 
-        # Capacity point (at optimal density k_j/2)
+        # CAPACITY POINT (AT OPTIMAL DENSITY K_J/2)
         optimal_density = fd_metrics["Jam_Density"] / 2
         fig3.add_trace(
             px.scatter(x=[optimal_density], y=[fd_metrics["Capacity"]]).data[0]
@@ -431,7 +451,7 @@ if fd_metrics["fitted_curve"] is not None:
         fig3.data[-1].text = [f"Capacity<br>{fd_metrics['Capacity']:.1f} veh/hr"]
         fig3.data[-1].textposition = "top center"
 
-        # Jam density point (at flow = 0)
+        # JAM DENSITY POINT (AT FLOW = 0)
         fig3.add_trace(
             px.scatter(x=[fd_metrics["Jam_Density"]], y=[0]).data[0]
         )
