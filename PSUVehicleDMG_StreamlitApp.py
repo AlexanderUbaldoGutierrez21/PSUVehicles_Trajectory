@@ -64,8 +64,8 @@ loc_max = st.sidebar.number_input("Max Location (ft)", value=loc_max_val, step=1
 time_min = st.sidebar.number_input("Min Time (seconds)", value=time_min_val, step=10.0, disabled=clear_segments)
 time_max = st.sidebar.number_input("Max Time (seconds)", value=time_max_val, step=10.0, disabled=clear_segments)
 
-# ADD FREE-FLOW TRAVEL TIME INPUT
-free_flow_tt = st.sidebar.number_input("Free-Flow Travel Time (seconds)", value=7.9, step=0.1)
+# ADD FREE-FLOW TRAVEL TIME INPUT (set to 0 to avoid filtering vehicles by default)
+free_flow_tt = st.sidebar.number_input("Free-Flow Travel Time (seconds)", value=0.0, step=0.1)
 
 all_ids = sorted(df["vehicle_id"].unique())
 select_all = st.sidebar.checkbox("Select All", value=True)
