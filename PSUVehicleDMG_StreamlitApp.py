@@ -433,7 +433,7 @@ if fd_metrics["fitted_curve"] is not None:
         x="density",
         y="flow",
         title="💻 Fundamental Diagram (Density vs Flow)",
-        labels={"density": "Density (veh/mi)", "flow": "Flow (veh/hr)"}
+        labels={"density": "k(Density)", "flow": "q(Flow)"}
     )
 
     # ADD REFERENCE POINTS FOR KEY TRAFFIC FLOW PARAMETERS
