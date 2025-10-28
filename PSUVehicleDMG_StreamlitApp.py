@@ -257,6 +257,9 @@ def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, 
 # COMPUTE METRICS FOR THE SEGMENT
 metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
 
+# COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
+fd_metrics = compute_fundamental_diagram(segment_filtered_df, loc_min, loc_max, time_min, time_max)
+
 # DISPLAY TRAFFIC METRICS
 st.header("Traffic Flow Metrics")
 col1, col2, col3, col4 = st.columns(4)
@@ -436,19 +439,15 @@ if fd_metrics["fitted_curve"] is not None:
         st.empty()
 
     # CREATE FUNDAMENTAL DIAGRAM PLOT
-    fig3 = px.scatter(
-        x=[d for d, f in []],  # Placeholder for actual data points
-        y=[f for d, f in []],  # Placeholder for actual data points
+    fig3 = px.line(
+        fd_metrics["fitted_curve"],
+        x="density",
+        y="flow",
         title="💻 Fundamental Diagram (Density vs Flow)",
-        labels={"x": "Density (veh/mi)", "y": "Flow (veh/hr)"}
+        labels={"density": "Density (veh/mi)", "flow": "Flow (veh/hr)"}
     )
 
-    # ADD FITTED CURVE
-    fig3.add_trace(
-        px.line(fd_metrics["fitted_curve"], x="density", y="flow").data[0]
-    )
-
-    fig3.update_traces(line=dict(color="#0D1B2A", width=3), selector=dict(type='scatter'))
+    fig3.update_traces(line=dict(color="#0D1B2A", width=3))
     fig3.update_layout(
         showlegend=False,
         hovermode="x unified"
