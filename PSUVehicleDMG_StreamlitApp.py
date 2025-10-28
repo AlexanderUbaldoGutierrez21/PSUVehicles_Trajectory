@@ -48,14 +48,11 @@ if clear_segments:
     time_min_val = full_time_min
     time_max_val = full_time_max
 else:
-    # Based on trajectory data analysis, optimal ranges for illustrating different traffic states:
-    # Free flow: early times, low density areas (0-200 ft)
-    # Capacity: medium density areas (200-600 ft)
-    # Jam: high density areas (600-900 ft)
+    # Set to full dataset range to show all 247 trajectories by default
     loc_min_val = 0.0    # Start from beginning
-    loc_max_val = 900.0  # Cover full range for illustration
+    loc_max_val = full_loc_max  # Use actual max location from data
     time_min_val = 0.0   # Start from beginning
-    time_max_val = 400.0 # Cover main traffic period
+    time_max_val = full_time_max # Use actual max time from data
 
 # ADD LOCATION AND TIME RANGE INPUTS
 st.sidebar.subheader("Segment Filters")
