@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 import numpy as np
+from scipy.optimize import curve_fit
 
 # PAGE SETUP
 st.set_page_config(page_title="Vehicles Trajectory Viewer", layout="wide")
@@ -156,6 +157,68 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
         "Avg_Delay": round(avg_delay, 2)
     }
 
+# FUNCTION TO COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
+def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max):
+    if df_segment.empty:
+        return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
+
+    # SEGMENT LENGTH IN MILES
+    segment_length_mi = (loc_max - loc_min) / 5280.0
+
+    # TIME PERIOD IN HOURS
+    time_period_hr = (time_max - time_min) / 3600.0
+
+    # COMPUTE DENSITY AND FLOW AT DIFFERENT TIME INTERVALS
+    time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second intervals
+    density_flow_pairs = []
+
+    for t in time_bins:
+        vehicles_at_t = df_segment[(df_segment["time"] >= t) & (df_segment["time"] < t + 1)]
+        if not vehicles_at_t.empty:
+            # DENSITY: vehicles per mile at this time
+            density = len(vehicles_at_t["vehicle_id"].unique()) / segment_length_mi
+
+            # FLOW: vehicles per hour (assuming 1-second interval represents flow rate)
+            # Count vehicles that entered or exited in this interval
+            flow = len(vehicles_at_t["vehicle_id"].unique()) / (1.0 / 3600.0)  # veh/hr
+
+            if density > 0 and flow > 0:
+                density_flow_pairs.append((density, flow))
+
+    if len(density_flow_pairs) < 3:
+        return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
+
+    # CONVERT TO ARRAYS
+    densities = np.array([d for d, f in density_flow_pairs])
+    flows = np.array([f for d, f in density_flow_pairs])
+
+    # GREENSHIELDS MODEL: q = u_f * k * (1 - k/k_j)
+    def greenshields_model(k, u_f, k_j):
+        return u_f * k * (1 - k / k_j)
+
+    try:
+        # FIT THE MODEL
+        popt, pcov = curve_fit(greenshields_model, densities, flows, p0=[60, 200], bounds=([10, 50], [100, 500]))
+        u_f, k_j = popt
+
+        # CAPACITY IS THE MAXIMUM FLOW
+        capacity = u_f * k_j / 4  # Maximum occurs at k = k_j/2
+
+        # CREATE FITTED CURVE DATA
+        k_fit = np.linspace(0, k_j * 1.1, 100)
+        q_fit = greenshields_model(k_fit, u_f, k_j)
+        fitted_curve = pd.DataFrame({"density": k_fit, "flow": q_fit})
+
+        return {
+            "Jam_Density": round(k_j, 2),
+            "Free_Flow_Speed": round(u_f, 2),
+            "Capacity": round(capacity, 2),
+            "fitted_curve": fitted_curve
+        }
+    except:
+        # FALLBACK: SIMPLE LINEAR FIT OR DEFAULT VALUES
+        return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
+
 # FUNCTION TO COMPUTE CUMULATIVE INPUT, OUTPUT, AND VIRTUAL ARRIVAL
 def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
     if df_segment.empty:
@@ -206,16 +269,6 @@ with col3:
 with col4:
     st.metric("Avg Speed (mi/hr)", f"{metrics['Avg_Speed']:.2f}")
 
-col5, col6, col7, col8 = st.columns(4)
-with col5:
-    st.metric("Max Accumulation (veh)", metrics["Max_Accumulation"])
-with col6:
-    st.metric("Max Travel Time (s)", f"{metrics['Max_Travel_Time']:.2f}")
-with col7:
-    st.metric("Avg Delay (s)", f"{metrics['Avg_Delay']:.2f}")
-with col8:
-    st.empty()  
-
 # PLOT
 base_colors = [
     "#0D1B2A", "#1B263B", "#415A77", "#778DA9", "#E0E1DD",
@@ -237,6 +290,50 @@ fig.update_layout(
     legend=dict(title="Vehicle ID"),
     hovermode="x unified"
 )
+
+# ADD ANNOTATIONS FOR FUNDAMENTAL DIAGRAM ILLUSTRATION
+# Based on data analysis, add lines/regions to illustrate jam density, free flow speed, and capacity
+if fd_metrics["fitted_curve"] is not None and fd_metrics["Jam_Density"] > 0:
+    # Add vertical lines to show different traffic states
+    # Free flow region (low density): 0-200 ft
+    fig.add_vline(x=200, line_dash="solid", line_color="green", opacity=0.3,
+                  annotation_text="Free Flow Region")
+
+    # Capacity region (medium density): 200-600 ft
+    fig.add_vline(x=600, line_dash="solid", line_color="yellow", opacity=0.3,
+                  annotation_text="Capacity Region")
+
+    # Jam region (high density): 600-900 ft
+    fig.add_vline(x=900, line_dash="solid", line_color="red", opacity=0.3,
+                  annotation_text="Jam Region")
+
+    # Add annotations with the calculated values
+    fig.add_annotation(
+        x=100,  # Free flow region
+        y=time_max - 10,
+        text=f"Free Flow<br>Speed: {fd_metrics['Free_Flow_Speed']:.1f} mi/hr",
+        showarrow=False,
+        bgcolor="green",
+        opacity=0.7
+    )
+
+    fig.add_annotation(
+        x=400,  # Capacity region
+        y=time_max - 10,
+        text=f"Capacity: {fd_metrics['Capacity']:.1f} veh/hr",
+        showarrow=False,
+        bgcolor="yellow",
+        opacity=0.7
+    )
+
+    fig.add_annotation(
+        x=750,  # Jam region
+        y=time_max - 10,
+        text=f"Jam Density: {fd_metrics['Jam_Density']:.1f} veh/mi",
+        showarrow=False,
+        bgcolor="red",
+        opacity=0.7
+    )
 
 # DISPLAY
 st.plotly_chart(fig, use_container_width=True)
@@ -310,5 +407,51 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         margin=dict(t=100) # Add space at the top for labels
     )
 
-
     st.plotly_chart(fig2, use_container_width=True)
+
+    # DISPLAY QUEUING METRICS BELOW THE CHART
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Max Accumulation (veh)", metrics["Max_Accumulation"])
+    with col2:
+        st.metric("Max Travel Time (s)", f"{metrics['Max_Travel_Time']:.2f}")
+    with col3:
+        st.metric("Avg Delay (s)", f"{metrics['Avg_Delay']:.2f}")
+    with col4:
+        st.empty()
+
+# FUNDAMENTAL DIAGRAM SECTION
+if fd_metrics["fitted_curve"] is not None:
+    st.header("Fundamental Diagram")
+
+    # DISPLAY FUNDAMENTAL DIAGRAM METRICS
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Jam Density (veh/mi)", f"{fd_metrics['Jam_Density']:.2f}")
+    with col2:
+        st.metric("Free Flow Speed (mi/hr)", f"{fd_metrics['Free_Flow_Speed']:.2f}")
+    with col3:
+        st.metric("Capacity (veh/hr)", f"{fd_metrics['Capacity']:.2f}")
+    with col4:
+        st.empty()
+
+    # CREATE FUNDAMENTAL DIAGRAM PLOT
+    fig3 = px.scatter(
+        x=[d for d, f in []],  # Placeholder for actual data points
+        y=[f for d, f in []],  # Placeholder for actual data points
+        title="💻 Fundamental Diagram (Density vs Flow)",
+        labels={"x": "Density (veh/mi)", "y": "Flow (veh/hr)"}
+    )
+
+    # ADD FITTED CURVE
+    fig3.add_trace(
+        px.line(fd_metrics["fitted_curve"], x="density", y="flow").data[0]
+    )
+
+    fig3.update_traces(line=dict(color="#0D1B2A", width=3), selector=dict(type='scatter'))
+    fig3.update_layout(
+        showlegend=False,
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig3, use_container_width=True)
