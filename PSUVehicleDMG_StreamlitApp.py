@@ -196,8 +196,18 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         return u_f * k * (1 - k / k_j)
 
     try:
-        # FIT THE MODEL - Use more reasonable bounds and initial guesses
-        popt, pcov = curve_fit(greenshields_model, densities, flows, p0=[50, 150], bounds=([20, 80], [80, 300]))
+        # FIT THE MODEL - Use adaptive bounds based on observed data
+        max_density = max(densities) if len(densities) > 0 else 200
+        max_flow = max(flows) if len(flows) > 0 else 10000
+
+        # Set bounds based on actual data range with more reasonable limits
+        avg_speed = max_flow / max_density if max_density > 0 else 50
+        u_f_bounds = (max(10, avg_speed * 0.5), min(200, avg_speed * 3))  # Free flow speed bounds
+        k_j_bounds = (max(100, max_density * 1.2), min(1000, max_density * 5))  # Jam density bounds
+
+        popt, pcov = curve_fit(greenshields_model, densities, flows,
+                              p0=[avg_speed, max_density * 2],
+                              bounds=(u_f_bounds, k_j_bounds))
         u_f, k_j = popt
 
         # CAPACITY IS THE MAXIMUM FLOW
