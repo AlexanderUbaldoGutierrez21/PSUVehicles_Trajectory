@@ -4,6 +4,7 @@ import plotly.express as px
 import os
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.stats import linregress
 
 # PAGE SETUP
 st.set_page_config(page_title="Vehicles Trajectory Viewer", layout="wide")
@@ -170,9 +171,10 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     time_period_hr = (time_max - time_min) / 3600.0
     print(f"DEBUG: time_period_hr = {time_period_hr}")
 
-    # COMPUTE DENSITY AND FLOW AT DIFFERENT TIME INTERVALS
+    # COMPUTE DENSITY AND FLOW/SPEED AT DIFFERENT TIME INTERVALS
     time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second intervals
     density_flow_pairs = []
+    density_speed_pairs = []
 
     # Precompute instantaneous speeds (ft/s) per vehicle using forward differences
     df_speed = df_segment.sort_values(["vehicle_id", "time"]).copy()
@@ -182,6 +184,8 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         dx = g["location"].shift(-1) - g["location"]
         dt = g["time"].shift(-1) - g["time"]
         speed = dx / dt
+        # Guard against zero/negative dt
+        speed = speed.where(dt > 0, np.nan)
         # assign back; last row per vehicle remains NaN
         df_speed.loc[g.index, "speed_fps"] = speed
 
@@ -194,6 +198,8 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
 
             # Average speed across vehicles present in this time bin (mi/hr)
             speeds_fps = vehicles_at_t["speed_fps"].replace([np.inf, -np.inf], np.nan).dropna()
+            # Filter out non-physical speeds (<=0 ft/s or >300 ft/s ~ 204 mph)
+            speeds_fps = speeds_fps[(speeds_fps > 0) & (speeds_fps < 300)]
             if len(speeds_fps) == 0:
                 continue
             avg_speed_mph = speeds_fps.mean() * 3600.0 / 5280.0
@@ -201,11 +207,13 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             # FLOW: q = k * u (veh/hr)
             flow = density * avg_speed_mph
 
-            if density > 0 and flow > 0:
+            if density > 0 and flow > 0 and avg_speed_mph > 0:
                 density_flow_pairs.append((density, flow))
+                density_speed_pairs.append((density, avg_speed_mph))
                 print(f"DEBUG: t={t}, num_veh={num_veh}, density={density}, avg_speed_mph={avg_speed_mph}, flow={flow}")
 
     print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
+    print(f"DEBUG: density_speed_pairs count = {len(density_speed_pairs)}")
 
     if len(density_flow_pairs) < 3:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
@@ -219,25 +227,35 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         return u_f * k * (1 - k / k_j)
 
     try:
-        # FIT THE MODEL - Use adaptive bounds based on observed data
-        max_density = max(densities) if len(densities) > 0 else 200
-        max_flow = max(flows) if len(flows) > 0 else 10000
+        # Fit Greenshields via linear regression on u-k: u = u_f - (u_f/k_j) * k
+        if len(density_speed_pairs) < 3:
+            return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-        # Set bounds based on actual data range with more reasonable limits
-        avg_speed = max_flow / max_density if max_density > 0 else 50
-        print(f"DEBUG: max_density={max_density}, max_flow={max_flow}, avg_speed={avg_speed}")
-        u_f_bounds = (max(10, avg_speed * 0.5), min(200, avg_speed * 3))  # Free flow speed bounds
-        k_j_bounds = (max(100, max_density * 1.2), min(1000, max_density * 5))  # Jam density bounds
-        print(f"DEBUG: u_f_bounds={u_f_bounds}, k_j_bounds={k_j_bounds}")
+        ks = np.array([d for d, u in density_speed_pairs])
+        us = np.array([u for d, u in density_speed_pairs])
 
-        popt, pcov = curve_fit(greenshields_model, densities, flows,
-                               p0=[avg_speed, max_density * 2],
-                               bounds=(u_f_bounds, k_j_bounds))
-        u_f, k_j = popt
+        # Optional basic filtering of extreme values
+        valid = np.isfinite(ks) & np.isfinite(us) & (ks > 0) & (us > 0) & (us < 1200)  # speeds in mph safeguarded
+        ks = ks[valid]
+        us = us[valid]
+
+        print(f"DEBUG: regression sample size = {len(ks)}")
+
+        res = linregress(ks, us)
+        m, b, r2 = res.slope, res.intercept, res.rvalue ** 2
+        print(f"DEBUG: linregress slope={m}, intercept={b}, R2={r2}")
+
+        u_f = max(0.0, float(b))
+        if not np.isfinite(m) or m >= 0 or not np.isfinite(u_f) or u_f <= 0:
+            raise ValueError("Invalid regression (non-negative slope or non-finite u_f)")
+
+        k_j = -u_f / m  # since m = -u_f / k_j
+        if not np.isfinite(k_j) or k_j <= 0:
+            raise ValueError("Invalid k_j from regression")
+
+        # Capacity at k = k_j / 2
+        capacity = u_f * k_j / 4.0
         print(f"DEBUG: fitted u_f={u_f}, k_j={k_j}")
-
-        # CAPACITY IS THE MAXIMUM FLOW
-        capacity = u_f * k_j / 4  # Maximum occurs at k = k_j/2
         print(f"DEBUG: capacity={capacity}")
 
         # CREATE FITTED CURVE DATA
@@ -252,8 +270,8 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             "fitted_curve": fitted_curve
         }
     except Exception as e:
-        print(f"DEBUG: Exception in fitting: {e}")
-        # FALLBACK: Use simple estimation based on observed data
+        print(f"DEBUG: Exception in fitting (u-k regression fallback to q-k observed): {e}")
+        # FALLBACK: Use simple estimation based on observed q-k data
         if len(density_flow_pairs) > 0:
             max_density = max(d for d, f in density_flow_pairs)
             max_flow = max(f for d, f in density_flow_pairs)
@@ -263,12 +281,12 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             jam_density = max_density * 2
             # Estimate free flow speed as max observed speed
             free_flow_speed = avg_speed
-            # Estimate capacity as max observed flow
-            capacity = max_flow
+            # Estimate capacity using Greenshields capacity formula
+            capacity = free_flow_speed * jam_density / 4.0
 
-            # CREATE SIMPLE LINEAR CURVE AS FALLBACK
+            # CREATE SIMPLE CURVE WITH ESTIMATES
             k_fit = np.linspace(0, jam_density, 100)
-            q_fit = free_flow_speed * k_fit * (1 - k_fit / jam_density)
+            q_fit = greenshields_model(k_fit, free_flow_speed, jam_density)
             fitted_curve = pd.DataFrame({"density": k_fit, "flow": q_fit})
 
             return {
