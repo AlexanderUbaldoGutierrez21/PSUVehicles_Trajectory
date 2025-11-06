@@ -76,7 +76,7 @@ selected_ids = st.sidebar.multiselect(
 # FUNDAMENTAL DIAGRAM DATA SOURCE OPTION
 fd_from_full = st.sidebar.checkbox(
     "Use full dataset for Fundamental Diagram",
-    value=True,
+    value=False,
     help="Compute u–k regression using the entire dataset instead of the current segment selection."
 )
 
