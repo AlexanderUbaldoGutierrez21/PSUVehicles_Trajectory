@@ -164,25 +164,48 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
 
     # SEGMENT LENGTH IN MILES
     segment_length_mi = (loc_max - loc_min) / 5280.0
+    print(f"DEBUG: segment_length_mi = {segment_length_mi}")
 
     # TIME PERIOD IN HOURS
     time_period_hr = (time_max - time_min) / 3600.0
+    print(f"DEBUG: time_period_hr = {time_period_hr}")
 
     # COMPUTE DENSITY AND FLOW AT DIFFERENT TIME INTERVALS
     time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second intervals
     density_flow_pairs = []
 
+    # Precompute instantaneous speeds (ft/s) per vehicle using forward differences
+    df_speed = df_segment.sort_values(["vehicle_id", "time"]).copy()
+    df_speed["speed_fps"] = np.nan
+    for vid, g in df_speed.groupby("vehicle_id"):
+        g = g.sort_values("time")
+        dx = g["location"].shift(-1) - g["location"]
+        dt = g["time"].shift(-1) - g["time"]
+        speed = dx / dt
+        # assign back; last row per vehicle remains NaN
+        df_speed.loc[g.index, "speed_fps"] = speed
+
     for t in time_bins:
-        vehicles_at_t = df_segment[(df_segment["time"] >= t) & (df_segment["time"] < t + 1)]
+        vehicles_at_t = df_speed[(df_speed["time"] >= t) & (df_speed["time"] < t + 1)]
         if not vehicles_at_t.empty:
             # DENSITY: VEHICLES PER MILE AT THIS TIME
-            density = len(vehicles_at_t["vehicle_id"].unique()) / segment_length_mi
+            num_veh = len(vehicles_at_t["vehicle_id"].unique())
+            density = num_veh / segment_length_mi
 
-            # FLOW: VEHICLES PER HOUR 
-            flow = len(vehicles_at_t["vehicle_id"].unique()) / (1.0 / 3600.0)  # veh/hr
+            # Average speed across vehicles present in this time bin (mi/hr)
+            speeds_fps = vehicles_at_t["speed_fps"].replace([np.inf, -np.inf], np.nan).dropna()
+            if len(speeds_fps) == 0:
+                continue
+            avg_speed_mph = speeds_fps.mean() * 3600.0 / 5280.0
+
+            # FLOW: q = k * u (veh/hr)
+            flow = density * avg_speed_mph
 
             if density > 0 and flow > 0:
                 density_flow_pairs.append((density, flow))
+                print(f"DEBUG: t={t}, num_veh={num_veh}, density={density}, avg_speed_mph={avg_speed_mph}, flow={flow}")
+
+    print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
 
     if len(density_flow_pairs) < 3:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
@@ -202,16 +225,20 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
 
         # Set bounds based on actual data range with more reasonable limits
         avg_speed = max_flow / max_density if max_density > 0 else 50
+        print(f"DEBUG: max_density={max_density}, max_flow={max_flow}, avg_speed={avg_speed}")
         u_f_bounds = (max(10, avg_speed * 0.5), min(200, avg_speed * 3))  # Free flow speed bounds
         k_j_bounds = (max(100, max_density * 1.2), min(1000, max_density * 5))  # Jam density bounds
+        print(f"DEBUG: u_f_bounds={u_f_bounds}, k_j_bounds={k_j_bounds}")
 
         popt, pcov = curve_fit(greenshields_model, densities, flows,
-                              p0=[avg_speed, max_density * 2],
-                              bounds=(u_f_bounds, k_j_bounds))
+                               p0=[avg_speed, max_density * 2],
+                               bounds=(u_f_bounds, k_j_bounds))
         u_f, k_j = popt
+        print(f"DEBUG: fitted u_f={u_f}, k_j={k_j}")
 
         # CAPACITY IS THE MAXIMUM FLOW
         capacity = u_f * k_j / 4  # Maximum occurs at k = k_j/2
+        print(f"DEBUG: capacity={capacity}")
 
         # CREATE FITTED CURVE DATA
         k_fit = np.linspace(0, k_j * 1.1, 100)
@@ -225,6 +252,7 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             "fitted_curve": fitted_curve
         }
     except Exception as e:
+        print(f"DEBUG: Exception in fitting: {e}")
         # FALLBACK: Use simple estimation based on observed data
         if len(density_flow_pairs) > 0:
             max_density = max(d for d, f in density_flow_pairs)
