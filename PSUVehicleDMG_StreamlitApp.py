@@ -181,8 +181,7 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     time_period_hr = (time_max_fd - time_min_fd) / 3600.0
     print(f"DEBUG: time_period_hr = {time_period_hr}")
 
-    # COMPUTE DENSITY AND FLOW/SPEED AT DIFFERENT TIME INTERVALS
-    time_bins = np.arange(time_min_fd, time_max_fd + 1, 1)  # 1-second intervals
+    # COMPUTE MICROSCOPIC u–k PAIRS PER OBSERVATION (no time binning)
     density_flow_pairs = []
     density_speed_pairs = []
 
@@ -199,38 +198,29 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         # assign back; last row per vehicle remains NaN
         df_speed.loc[g.index, "speed_fps"] = speed
 
-    for t in time_bins:
-        vehicles_at_t = df_speed[(df_speed["time"] >= t) & (df_speed["time"] < t + 1)]
-        if not vehicles_at_t.empty:
-            # DENSITY: VEHICLES PER MILE AT THIS TIME
-            num_veh = len(vehicles_at_t["vehicle_id"].unique())
-            density = num_veh / segment_length_mi
+    # Precompute number of vehicles present at each timestamp (for density)
+    counts_by_time = df_speed.groupby("time")["vehicle_id"].nunique().to_dict()
 
-            # Average speed across vehicles present in this time bin (mi/hr) using space-mean (harmonic) across vehicles
-            # 1) Compute a per-vehicle average speed within the bin to avoid multi-sampling bias
-            per_vehicle_fps = (
-                vehicles_at_t
-                .groupby("vehicle_id")["speed_fps"]
-                .apply(lambda s: s.replace([np.inf, -np.inf], np.nan).dropna().mean())
-                .replace([np.inf, -np.inf], np.nan)
-                .dropna()
-            )
-            # 2) Filter out non-physical speeds (<=0 ft/s or >300 ft/s ~ 204 mph)
-            per_vehicle_fps = per_vehicle_fps[(per_vehicle_fps > 0) & (per_vehicle_fps < 300)]
-            if len(per_vehicle_fps) == 0:
-                continue
-            per_vehicle_mph = per_vehicle_fps * 3600.0 / 5280.0
-            # 3) Space-mean speed approximation: harmonic mean across vehicles present in the segment
-            n_v = len(per_vehicle_mph)
-            avg_speed_mph = float(n_v / np.sum(1.0 / per_vehicle_mph))
+    # Filter valid microscopic observations (finite, >0 ft/s, <300 ft/s)
+    valid_mask = (
+        df_speed["speed_fps"].replace([np.inf, -np.inf], np.nan).notna()
+        & (df_speed["speed_fps"] > 0)
+        & (df_speed["speed_fps"] < 300)
+    )
+    valid_obs = df_speed[valid_mask]
 
-            # FLOW: q = k * u (veh/hr)
-            flow = density * avg_speed_mph
+    # Build (k, u) and (k, q) pairs per observation
+    for row in valid_obs.itertuples(index=False):
+        num_veh = counts_by_time.get(row.time, 0)
+        if segment_length_mi <= 0 or num_veh <= 0:
+            continue
+        density = num_veh / segment_length_mi  # veh/mi
+        u_mph = float(row.speed_fps) * 3600.0 / 5280.0  # mph
+        q_veh_hr = density * u_mph  # veh/hr via q = k * u
 
-            if density > 0 and flow > 0 and avg_speed_mph > 0:
-                density_flow_pairs.append((density, flow))
-                density_speed_pairs.append((density, avg_speed_mph))
-                print(f"DEBUG: t={t}, num_veh={num_veh}, density={density}, avg_speed_mph={avg_speed_mph}, flow={flow}")
+        if density > 0 and u_mph > 0 and np.isfinite(u_mph):
+            density_speed_pairs.append((density, u_mph))
+            density_flow_pairs.append((density, q_veh_hr))
 
     print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
     print(f"DEBUG: density_speed_pairs count = {len(density_speed_pairs)}")
