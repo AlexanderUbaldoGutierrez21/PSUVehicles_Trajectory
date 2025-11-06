@@ -89,7 +89,7 @@ segment_filtered_df = df[
 ]
 filtered_df = segment_filtered_df[segment_filtered_df["vehicle_id"].isin(selected_ids)]
 
-# FUNCTION TO COMPUTE TRAFFIC METRICS
+# FUNCTION TO COMPUTE TRAFFIC METRICS (UNMODIFIED)
 def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
     if df_segment.empty:
         return {"N": 0, "Density": 0.0, "Flow": 0.0, "Avg_Speed": 0.0, "Max_Accumulation": 0, "Max_Travel_Time": 0.0, "Avg_Delay": 0.0}
@@ -165,18 +165,14 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
         "Avg_Delay": round(avg_delay, 2)
     }
 
-# FUNCTION TO COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
+# FUNCTION TO COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS (CORRECTED: MICROSCOPIC LOGIC)
 def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max):
     if df_segment.empty:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # FIX: Use user-specified segment length for density (do not infer from filtered data range)
+    # Guard against zero or negative segment length (used for context, but not for k calc)
     segment_length_ft = (loc_max - loc_min)
-    segment_length_mi = segment_length_ft / 5280.0
-    print(f"DEBUG: segment_length_mi = {segment_length_mi}")
-
-    # Guard against zero or negative segment length
-    if not np.isfinite(segment_length_mi) or segment_length_mi <= 0:
+    if segment_length_ft <= 0:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
     # COMPUTE MICROSCOPIC u–k PAIRS PER VEHICLE PER TIME STEP
@@ -204,38 +200,43 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     )
     valid_obs = df_speed[valid_mask]
 
-    # Compute macroscopic density and average speed per time step
+    # Compute microscopic density per vehicle per time step using space headway
     for t, group_t in valid_obs.groupby("time"):
-        num_veh = len(group_t["vehicle_id"].unique())
-        if num_veh == 0 or segment_length_mi <= 0:
-            continue
+        # Sort by location (ascending, assuming downstream direction)
+        group_t = group_t.sort_values("location")
+        locations = group_t["location"].values
+        speeds_fps = group_t["speed_fps"].values
 
-        # Macroscopic density: vehicles per mile at this time step
-        density_veh_per_mi = num_veh / segment_length_mi
+        # Compute space headways (distance to next vehicle ahead)
+        # spacing_i = x_{i+1} - x_i (difference between leader and follower)
+        headways_ft = np.diff(locations)  
+        
+        # The speed we pair is the speed of the *follower* (all but the last speed)
+        follower_speeds_fps = speeds_fps[:-1]
+        
+        # A valid u-k pair exists for every follower (i) and its spacing (headway_i)
+        for i in range(len(headways_ft)):
+            h_ft = headways_ft[i]
+            u_fps = follower_speeds_fps[i]
 
-        # Average speed: arithmetic mean of individual vehicle speeds (time-mean speed)
-        speeds_mph = group_t["speed_fps"] * 3600.0 / 5280.0
-        speeds_mph = speeds_mph.replace([np.inf, -np.inf], np.nan).dropna()
-        if len(speeds_mph) == 0:
-            continue
+            if h_ft > 0 and u_fps > 0:
+                density_veh_per_ft = 1.0 / h_ft
+                density_veh_per_mi = density_veh_per_ft * 5280.0  # k = 5280 / spacing
+                u_mph = float(u_fps) * 3600.0 / 5280.0  # u (speed of the trailing vehicle)
 
-        # Time-mean speed (arithmetic mean)
-        avg_speed_mph = speeds_mph.mean()
+                if np.isfinite(density_veh_per_mi) and np.isfinite(u_mph) and u_mph > 0 and density_veh_per_mi < 1000:
+                    density_speed_pairs.append((density_veh_per_mi, u_mph))
+                    q_veh_hr = density_veh_per_mi * u_mph
+                    density_flow_pairs.append((density_veh_per_mi, q_veh_hr))
 
-        if density_veh_per_mi > 0 and avg_speed_mph > 0 and np.isfinite(avg_speed_mph):
-            density_speed_pairs.append((density_veh_per_mi, avg_speed_mph))
-            q_veh_hr = density_veh_per_mi * avg_speed_mph
-            density_flow_pairs.append((density_veh_per_mi, q_veh_hr))
-
-    print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
-    print(f"DEBUG: density_speed_pairs count = {len(density_speed_pairs)}")
 
     if len(density_flow_pairs) < 3:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
     # CONVERT TO ARRAYS
+    # These are the microscopic observations
     densities = np.array([d for d, f in density_flow_pairs])
-    flows = np.array([f for d, f in density_flow_pairs])
+    speeds = np.array([u for d, u in density_speed_pairs])
 
     # GREENSHIELDS MODEL
     def greenshields_model(k, u_f, k_j):
@@ -246,22 +247,21 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         if len(density_speed_pairs) < 3:
             return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-        ks = np.array([d for d, u in density_speed_pairs])
-        us = np.array([u for d, u in density_speed_pairs])
+        ks = densities
+        us = speeds
 
         # Optional basic filtering of extreme values
-        valid = np.isfinite(ks) & np.isfinite(us) & (ks > 0) & (us > 0) & (us < 1200)  # speeds in mph safeguarded
+        valid = np.isfinite(ks) & np.isfinite(us) & (ks > 0) & (us > 0) & (us < 1200) 
         ks = ks[valid]
         us = us[valid]
 
-        print(f"DEBUG: regression sample size = {len(ks)}")
 
         res = linregress(ks, us)
         m, b, r2 = res.slope, res.intercept, res.rvalue ** 2
-        print(f"DEBUG: linregress slope={m}, intercept={b}, R2={r2}")
 
         u_f = max(0.0, float(b))
         if not np.isfinite(m) or m >= 0 or not np.isfinite(u_f) or u_f <= 0:
+            # Fallback to general estimation if linear regression is invalid
             raise ValueError("Invalid regression (non-negative slope or non-finite u_f)")
 
         k_j = -u_f / m  # since m = -u_f / k_j
@@ -270,8 +270,6 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
 
         # Capacity at k = k_j / 2
         capacity = u_f * k_j / 4.0
-        print(f"DEBUG: fitted u_f={u_f}, k_j={k_j}")
-        print(f"DEBUG: capacity={capacity}")
 
         # CREATE FITTED CURVE DATA
         k_fit = np.linspace(0, k_j * 1.1, 100)
@@ -285,10 +283,9 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             "fitted_curve": fitted_curve
         }
     except Exception as e:
-        print(f"DEBUG: Exception in fitting (u-k regression fallback to q-k observed): {e}")
         # FALLBACK: Use simple estimation based on observed q-k data
         if len(density_flow_pairs) > 0:
-            max_density = max(d for d, f in density_flow_pairs)
+            max_density = np.percentile(densities, 95) if len(densities) > 0 else 0
             max_flow = max(f for d, f in density_flow_pairs)
             avg_speed = max_flow / max_density if max_density > 0 else 0
 
