@@ -73,7 +73,14 @@ selected_ids = st.sidebar.multiselect(
     default=all_ids if select_all else []
 )
 
-# APPLY SEGMENT FILTERS FIRST, THEN VEHICLE SELECTION 
+# FUNDAMENTAL DIAGRAM DATA SOURCE OPTION
+fd_from_full = st.sidebar.checkbox(
+    "Use full dataset for Fundamental Diagram",
+    value=True,
+    help="Compute u–k regression using the entire dataset instead of the current segment selection."
+)
+
+# APPLY SEGMENT FILTERS FIRST, THEN VEHICLE SELECTION
 segment_filtered_df = df[
     (df["location"] >= loc_min) &
     (df["location"] <= loc_max) &
@@ -163,16 +170,19 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     if df_segment.empty:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # SEGMENT LENGTH IN MILES
-    segment_length_mi = (loc_max - loc_min) / 5280.0
+    # Determine FD analysis range from the provided dataframe (full or segment)
+    loc_min_fd = df_segment["location"].min()
+    loc_max_fd = df_segment["location"].max()
+    segment_length_mi = (loc_max_fd - loc_min_fd) / 5280.0
     print(f"DEBUG: segment_length_mi = {segment_length_mi}")
 
-    # TIME PERIOD IN HOURS
-    time_period_hr = (time_max - time_min) / 3600.0
+    time_min_fd = df_segment["time"].min()
+    time_max_fd = df_segment["time"].max()
+    time_period_hr = (time_max_fd - time_min_fd) / 3600.0
     print(f"DEBUG: time_period_hr = {time_period_hr}")
 
     # COMPUTE DENSITY AND FLOW/SPEED AT DIFFERENT TIME INTERVALS
-    time_bins = np.arange(time_min, time_max + 1, 1)  # 1-second intervals
+    time_bins = np.arange(time_min_fd, time_max_fd + 1, 1)  # 1-second intervals
     density_flow_pairs = []
     density_speed_pairs = []
 
@@ -196,13 +206,23 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
             num_veh = len(vehicles_at_t["vehicle_id"].unique())
             density = num_veh / segment_length_mi
 
-            # Average speed across vehicles present in this time bin (mi/hr)
-            speeds_fps = vehicles_at_t["speed_fps"].replace([np.inf, -np.inf], np.nan).dropna()
-            # Filter out non-physical speeds (<=0 ft/s or >300 ft/s ~ 204 mph)
-            speeds_fps = speeds_fps[(speeds_fps > 0) & (speeds_fps < 300)]
-            if len(speeds_fps) == 0:
+            # Average speed across vehicles present in this time bin (mi/hr) using space-mean (harmonic) across vehicles
+            # 1) Compute a per-vehicle average speed within the bin to avoid multi-sampling bias
+            per_vehicle_fps = (
+                vehicles_at_t
+                .groupby("vehicle_id")["speed_fps"]
+                .apply(lambda s: s.replace([np.inf, -np.inf], np.nan).dropna().mean())
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+            )
+            # 2) Filter out non-physical speeds (<=0 ft/s or >300 ft/s ~ 204 mph)
+            per_vehicle_fps = per_vehicle_fps[(per_vehicle_fps > 0) & (per_vehicle_fps < 300)]
+            if len(per_vehicle_fps) == 0:
                 continue
-            avg_speed_mph = speeds_fps.mean() * 3600.0 / 5280.0
+            per_vehicle_mph = per_vehicle_fps * 3600.0 / 5280.0
+            # 3) Space-mean speed approximation: harmonic mean across vehicles present in the segment
+            n_v = len(per_vehicle_mph)
+            avg_speed_mph = float(n_v / np.sum(1.0 / per_vehicle_mph))
 
             # FLOW: q = k * u (veh/hr)
             flow = density * avg_speed_mph
@@ -337,7 +357,8 @@ def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, 
 metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
 
 # COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
-fd_metrics = compute_fundamental_diagram(segment_filtered_df, loc_min, loc_max, time_min, time_max)
+df_for_fd = df if fd_from_full else segment_filtered_df
+fd_metrics = compute_fundamental_diagram(df_for_fd, loc_min, loc_max, time_min, time_max)
 
 # DISPLAY TRAFFIC METRICS
 st.header("Traffic Flow Metrics")
