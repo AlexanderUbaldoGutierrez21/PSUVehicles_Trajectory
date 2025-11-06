@@ -179,7 +179,7 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     if not np.isfinite(segment_length_mi) or segment_length_mi <= 0:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # COMPUTE MICROSCOPIC u–k PAIRS PER OBSERVATION (no time binning)
+    # COMPUTE MICROSCOPIC u–k PAIRS PER VEHICLE PER TIME STEP
     density_flow_pairs = []
     density_speed_pairs = []
 
@@ -196,9 +196,6 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         # assign back; last row per vehicle remains NaN
         df_speed.loc[g.index, "speed_fps"] = speed
 
-    # Precompute number of vehicles present at each timestamp (for density)
-    counts_by_time = df_speed.groupby("time")["vehicle_id"].nunique().to_dict()
-
     # Filter valid microscopic observations (finite, >0 ft/s, <300 ft/s)
     valid_mask = (
         df_speed["speed_fps"].replace([np.inf, -np.inf], np.nan).notna()
@@ -207,18 +204,29 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     )
     valid_obs = df_speed[valid_mask]
 
-    # Build (k, u) and (k, q) pairs per observation
-    for row in valid_obs.itertuples(index=False):
-        num_veh = counts_by_time.get(row.time, 0)
-        if segment_length_mi <= 0 or num_veh <= 0:
-            continue
-        density = num_veh / segment_length_mi  # veh/mi
-        u_mph = float(row.speed_fps) * 3600.0 / 5280.0  # mph
-        q_veh_hr = density * u_mph  # veh/hr via q = k * u
+    # Compute microscopic density per vehicle per time step using space headway
+    for t, group_t in valid_obs.groupby("time"):
+        if len(group_t) < 2:
+            continue  # Need at least 2 vehicles to compute headway
+        # Sort by location (ascending, assuming downstream direction)
+        group_t = group_t.sort_values("location")
+        locations = group_t["location"].values
+        speeds = group_t["speed_fps"].values
 
-        if density > 0 and u_mph > 0 and np.isfinite(u_mph):
-            density_speed_pairs.append((density, u_mph))
-            density_flow_pairs.append((density, q_veh_hr))
+        # Compute space headways (distance to next vehicle ahead)
+        headways_ft = np.diff(locations)  # h_i = x_{i+1} - x_i
+        # For each vehicle i (except last), density k_i = 1 / h_i (veh/ft)
+        for i in range(len(headways_ft)):
+            h_ft = headways_ft[i]
+            if h_ft > 0:
+                density_veh_per_ft = 1.0 / h_ft
+                density_veh_per_mi = density_veh_per_ft * 5280.0  # convert to veh/mi
+                u_mph = float(speeds[i]) * 3600.0 / 5280.0  # mph
+                q_veh_hr = density_veh_per_mi * u_mph  # veh/hr via q = k * u
+
+                if density_veh_per_mi > 0 and u_mph > 0 and np.isfinite(u_mph):
+                    density_speed_pairs.append((density_veh_per_mi, u_mph))
+                    density_flow_pairs.append((density_veh_per_mi, q_veh_hr))
 
     print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
     print(f"DEBUG: density_speed_pairs count = {len(density_speed_pairs)}")
