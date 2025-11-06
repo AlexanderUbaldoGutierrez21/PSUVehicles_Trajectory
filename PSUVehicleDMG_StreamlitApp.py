@@ -170,16 +170,14 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     if df_segment.empty:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # Determine FD analysis range from the provided dataframe (full or segment)
-    loc_min_fd = df_segment["location"].min()
-    loc_max_fd = df_segment["location"].max()
-    segment_length_mi = (loc_max_fd - loc_min_fd) / 5280.0
+    # FIX: Use user-specified segment length for density (do not infer from filtered data range)
+    segment_length_ft = (loc_max - loc_min)
+    segment_length_mi = segment_length_ft / 5280.0
     print(f"DEBUG: segment_length_mi = {segment_length_mi}")
 
-    time_min_fd = df_segment["time"].min()
-    time_max_fd = df_segment["time"].max()
-    time_period_hr = (time_max_fd - time_min_fd) / 3600.0
-    print(f"DEBUG: time_period_hr = {time_period_hr}")
+    # Guard against zero or negative segment length
+    if not np.isfinite(segment_length_mi) or segment_length_mi <= 0:
+        return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
     # COMPUTE MICROSCOPIC u–k PAIRS PER OBSERVATION (no time binning)
     density_flow_pairs = []
