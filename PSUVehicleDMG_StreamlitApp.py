@@ -471,70 +471,66 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
 
     st.plotly_chart(fig2, use_container_width=True)
 
-# FUNDAMENTAL DIAGRAM SECTION
-if fd_metrics["fitted_curve"] is not None:
-    st.header("Fundamental Diagram")
+# =====================================================
+# FUNDAMENTAL DIAGRAM SECTION (SEGMENT + FULL COMPARISON)
+# =====================================================
+st.header("Fundamental Diagram Comparison")
 
-    # DISPLAY FUNDAMENTAL DIAGRAM METRICS
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Jam Density (veh/mi)", f"{fd_metrics['Jam_Density']:.2f}")
-    with col2:
-        st.metric("Free Flow Speed (mi/hr)", f"{fd_metrics['Free_Flow_Speed']:.2f}")
-    with col3:
-        st.metric("Capacity (veh/hr)", f"{fd_metrics['Capacity']:.2f}")
-    with col4:
-        st.empty()
+# Compute both versions
+fd_segment_metrics = compute_fundamental_diagram(segment_filtered_df, loc_min, loc_max, time_min, time_max)
+fd_full_metrics = compute_fundamental_diagram(df, full_loc_min, full_loc_max, full_time_min, full_time_max)
 
-    # CREATE FUNDAMENTAL DIAGRAM PLOT
+# Display side-by-side metrics comparison
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Segment-Based FD (Current Filters)")
+    st.metric("Jam Density (veh/mi)", f"{fd_segment_metrics['Jam_Density']:.2f}")
+    st.metric("Free Flow Speed (mi/hr)", f"{fd_segment_metrics['Free_Flow_Speed']:.2f}")
+    st.metric("Capacity (veh/hr)", f"{fd_segment_metrics['Capacity']:.2f}")
+
+with col2:
+    st.subheader("Full Dataset FD (Reference)")
+    st.metric("Jam Density (veh/mi)", f"{fd_full_metrics['Jam_Density']:.2f}")
+    st.metric("Free Flow Speed (mi/hr)", f"{fd_full_metrics['Free_Flow_Speed']:.2f}")
+    st.metric("Capacity (veh/hr)", f"{fd_full_metrics['Capacity']:.2f}")
+
+# Plot comparison if both have valid curves
+if fd_segment_metrics["fitted_curve"] is not None and fd_full_metrics["fitted_curve"] is not None:
+    st.subheader("Comparison of Fundamental Diagrams")
+
+    # Create both plots on the same figure
     fig3 = px.line(
-        fd_metrics["fitted_curve"],
+        fd_full_metrics["fitted_curve"],
         x="density",
         y="flow",
-        title="💻 Fundamental Diagram (Density vs Flow)",
-        labels={"density": "k(Density)", "flow": "q(Flow)"}
+        title="💻 Fundamental Diagram Comparison (Segment vs Full Dataset)",
+        labels={"density": "Density (veh/mi)", "flow": "Flow (veh/hr)"}
     )
 
-    # ADD REFERENCE POINTS FOR KEY TRAFFIC FLOW PARAMETERS
-    if fd_metrics["Jam_Density"] > 0:
-        # FREE FLOW SPEED POINT (AT DENSITY = 0)
-        fig3.add_trace(
-            px.scatter(x=[0], y=[fd_metrics["Free_Flow_Speed"]]).data[0]
-        )
-        fig3.data[-1].name = "Free Flow Speed"
-        fig3.data[-1].marker.color = "#778DA9"
-        fig3.data[-1].marker.size = 10
-        fig3.data[-1].mode = "markers+text"
-        fig3.data[-1].text = [f"Free Flow<br>{fd_metrics['Free_Flow_Speed']:.1f} mi/hr"]
-        fig3.data[-1].textposition = "top right"
+    # Add segment curve
+    fig3.add_trace(
+        px.line(
+            fd_segment_metrics["fitted_curve"],
+            x="density",
+            y="flow"
+        ).data[0]
+    )
 
-        # CAPACITY POINT (AT OPTIMAL DENSITY K_J/2)
-        optimal_density = fd_metrics["Jam_Density"] / 2
-        fig3.add_trace(
-            px.scatter(x=[optimal_density], y=[fd_metrics["Capacity"]]).data[0]
-        )
-        fig3.data[-1].name = "Capacity"
-        fig3.data[-1].marker.color = "#4FB0C6"
-        fig3.data[-1].marker.size = 10
-        fig3.data[-1].mode = "markers+text"
-        fig3.data[-1].text = [f"Capacity<br>{fd_metrics['Capacity']:.1f} veh/hr"]
-        fig3.data[-1].textposition = "top center"
+    # Customize
+    fig3.data[0].name = f"Full Dataset (k_j={fd_full_metrics['Jam_Density']:.1f}, u_f={fd_full_metrics['Free_Flow_Speed']:.1f})"
+    fig3.data[0].line.color = "#1B263B"
+    fig3.data[0].line.width = 3
 
-        # JAM DENSITY POINT (AT FLOW = 0)
-        fig3.add_trace(
-            px.scatter(x=[fd_metrics["Jam_Density"]], y=[0]).data[0]
-        )
-        fig3.data[-1].name = "Jam Density"
-        fig3.data[-1].marker.color = "#E0E1DD"
-        fig3.data[-1].marker.size = 10
-        fig3.data[-1].mode = "markers+text"
-        fig3.data[-1].text = [f"Jam Density<br>{fd_metrics['Jam_Density']:.1f} veh/mi"]
-        fig3.data[-1].textposition = "bottom center"
+    fig3.data[1].name = f"Segment 0–{loc_max:.0f} ft, 0–{time_max:.0f} s (k_j={fd_segment_metrics['Jam_Density']:.1f}, u_f={fd_segment_metrics['Free_Flow_Speed']:.1f})"
+    fig3.data[1].line.color = "#4FB0C6"
+    fig3.data[1].line.width = 3
+    fig3.data[1].line.dash = "dash"
 
-    fig3.update_traces(line=dict(color="#0D1B2A", width=3))
     fig3.update_layout(
-        showlegend=False,
+        legend=dict(title="FD Source", yanchor="top", y=1.05),
         hovermode="x unified"
     )
 
     st.plotly_chart(fig3, use_container_width=True)
+else:
+    st.warning("⚠️ Insufficient valid (u–k) data to compute both Fundamental Diagrams.")
