@@ -74,7 +74,6 @@ selected_ids = st.sidebar.multiselect(
 )
 
 # FUNDAMENTAL DIAGRAM DATA SOURCE OPTION
-# CORRECTED: Default to False to use the segment filter for FD
 fd_from_full = st.sidebar.checkbox(
     "Use full dataset for Fundamental Diagram",
     value=False,
@@ -90,7 +89,7 @@ segment_filtered_df = df[
 ]
 filtered_df = segment_filtered_df[segment_filtered_df["vehicle_id"].isin(selected_ids)]
 
-# FUNCTION TO COMPUTE TRAFFIC METRICS (UNMODIFIED)
+# FUNCTION TO COMPUTE TRAFFIC METRICS
 def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
     if df_segment.empty:
         return {"N": 0, "Density": 0.0, "Flow": 0.0, "Avg_Speed": 0.0, "Max_Accumulation": 0, "Max_Travel_Time": 0.0, "Avg_Delay": 0.0}
@@ -166,15 +165,16 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
         "Avg_Delay": round(avg_delay, 2)
     }
 
-# FUNCTION TO COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS (CORRECTED)
+# FUNCTION TO COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
 def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max):
     if df_segment.empty:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # Use user-specified segment length for debug/context only
+    # FIX: Use user-specified segment length for density (do not infer from filtered data range)
     segment_length_ft = (loc_max - loc_min)
     segment_length_mi = segment_length_ft / 5280.0
-    
+    print(f"DEBUG: segment_length_mi = {segment_length_mi}")
+
     # Guard against zero or negative segment length
     if not np.isfinite(segment_length_mi) or segment_length_mi <= 0:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
@@ -204,27 +204,28 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     )
     valid_obs = df_speed[valid_mask]
 
-    # Compute microscopic density per vehicle per time step using space headway
+    # Compute macroscopic density and average speed per time step
     for t, group_t in valid_obs.groupby("time"):
-        # Sort by location (ascending, assuming downstream direction)
-        group_t = group_t.sort_values("location")
-        locations = group_t["location"].values
-        speeds = group_t["speed_fps"].values
+        num_veh = len(group_t["vehicle_id"].unique())
+        if num_veh == 0 or segment_length_mi <= 0:
+            continue
 
-        # Compute space headways (distance to next vehicle ahead)
-        headways_ft = np.diff(locations)  # h_i = x_{i+1} - x_i
-        # For each vehicle i (except last), density k_i = 1 / h_i (veh/ft)
-        for i in range(len(headways_ft)):
-            h_ft = headways_ft[i]
-            if h_ft > 0:
-                density_veh_per_ft = 1.0 / h_ft
-                density_veh_per_mi = density_veh_per_ft * 5280.0  # convert to veh/mi
-                u_mph = float(speeds[i]) * 3600.0 / 5280.0  # mph (speed of the trailing vehicle)
-                q_veh_hr = density_veh_per_mi * u_mph  # veh/hr via q = k * u
+        # Macroscopic density: vehicles per mile at this time step
+        density_veh_per_mi = num_veh / segment_length_mi
 
-                if density_veh_per_mi > 0 and u_mph > 0 and np.isfinite(u_mph):
-                    density_speed_pairs.append((density_veh_per_mi, u_mph))
-                    density_flow_pairs.append((density_veh_per_mi, q_veh_hr))
+        # Average speed: arithmetic mean of individual vehicle speeds (time-mean speed)
+        speeds_mph = group_t["speed_fps"] * 3600.0 / 5280.0
+        speeds_mph = speeds_mph.replace([np.inf, -np.inf], np.nan).dropna()
+        if len(speeds_mph) == 0:
+            continue
+
+        # Time-mean speed (arithmetic mean)
+        avg_speed_mph = speeds_mph.mean()
+
+        if density_veh_per_mi > 0 and avg_speed_mph > 0 and np.isfinite(avg_speed_mph):
+            density_speed_pairs.append((density_veh_per_mi, avg_speed_mph))
+            q_veh_hr = density_veh_per_mi * avg_speed_mph
+            density_flow_pairs.append((density_veh_per_mi, q_veh_hr))
 
     print(f"DEBUG: density_flow_pairs count = {len(density_flow_pairs)}")
     print(f"DEBUG: density_speed_pairs count = {len(density_speed_pairs)}")
@@ -312,8 +313,7 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         else:
             return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-
-# FUNCTION TO COMPUTE CUMULATIVE INPUT, OUTPUT, AND VIRTUAL ARRIVAL (UNMODIFIED)
+# FUNCTION TO COMPUTE CUMULATIVE INPUT, OUTPUT, AND VIRTUAL ARRIVAL
 def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, free_flow_tt):
     if df_segment.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
