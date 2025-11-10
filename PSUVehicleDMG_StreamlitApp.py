@@ -73,12 +73,6 @@ selected_ids = st.sidebar.multiselect(
     default=all_ids if select_all else []
 )
 
-# FUNDAMENTAL DIAGRAM DATA SOURCE OPTION
-fd_from_full = st.sidebar.checkbox(
-    "Use full dataset for Fundamental Diagram",
-    value=False,
-    help="Compute u–k regression using the entire dataset instead of the current segment selection."
-)
 
 # 3-DETECTOR METHODOLOGY SECTION
 st.sidebar.subheader("3-Detector Methodology")
@@ -426,11 +420,11 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
     if cum_1_df.empty or cum_3_df.empty:
         return pd.DataFrame()
 
-    # Convert to mph and veh/mi units
+    # CONVERT TO MPH AND VEH/MI UNITS
     u_f_fps = u_f * 5280 / 3600  # ft/s
     w_b_fps = w_b * 5280 / 3600  # ft/s
 
-    # Distance between detectors
+    # DISTANCE BETWEEN DETECTORS
     d_13 = abs(loc_3 - loc_1)  # ft
     d_12 = abs(loc_2 - loc_1)  # ft
 
@@ -448,7 +442,7 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
         cum_1_t = cum_1_t[0]
         cum_3_t = cum_3_t[0]
 
-        # Time for free flow travel between detectors
+        # TIME FOR FREE FLOW TRAVEL BETWEEN DETECTORS
         t_ff_13 = d_13 / u_f_fps  # seconds
         t_ff_12 = d_12 / u_f_fps  # seconds
 
@@ -479,8 +473,7 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
 metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
 
 # COMPUTE FUNDAMENTAL DIAGRAM PARAMETERS
-df_for_fd = df if fd_from_full else segment_filtered_df
-fd_metrics = compute_fundamental_diagram(df_for_fd, loc_min, loc_max, time_min, time_max)
+fd_metrics = compute_fundamental_diagram(segment_filtered_df, loc_min, loc_max, time_min, time_max)
 
 # DISPLAY TRAFFIC METRICS
 st.header("Traffic Flow Metrics")
@@ -860,26 +853,3 @@ if not merged_df.empty:
     if not non_zero_actual.empty:
         mape = np.mean(np.abs(non_zero_actual["abs_diff"] / non_zero_actual["actual"])) * 100
         st.write(f"**Mean Absolute Percentage Error (MAPE):** {mape:.2f}%")
-
-    # DISCUSSION
-    st.write("""
-    **Discussion on 3-Detector Estimation Accuracy:**
-
-    The 3-detector methodology uses cumulative vehicle counts from upstream (50 ft) and downstream (450 ft) detectors
-    along with the triangular fundamental diagram parameters to estimate traffic conditions at the middle location (300 ft).
-
-    **Key Findings:**
-    - Average absolute difference: {:.2f} vehicles
-    - The estimation performs {} during the analysis period.
-
-    **Factors Affecting Accuracy:**
-    1. **Traffic Flow Assumptions:** The method assumes triangular fundamental diagram relationships hold.
-    2. **Detector Spacing:** The distance between detectors affects the accuracy of wave propagation estimates.
-    3. **Traffic Conditions:** Accuracy may vary with different traffic states (free flow vs. congested).
-    4. **Data Quality:** The quality of cumulative count data at each detector location.
-
-    **Recommendations:**
-    - Validate the triangular FD parameters with field data.
-    - Consider detector spacing optimization for better estimation accuracy.
-    - Implement real-time calibration of FD parameters.
-    """.format(avg_abs_diff, "well" if avg_abs_diff < 5 else "moderately" if avg_abs_diff < 15 else "poorly"))
