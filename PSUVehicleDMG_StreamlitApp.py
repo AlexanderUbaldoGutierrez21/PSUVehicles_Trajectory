@@ -61,7 +61,7 @@ loc_max = st.sidebar.number_input("Max Location (ft)", value=loc_max_val, step=1
 time_min = st.sidebar.number_input("Min Time (seconds)", value=time_min_val, step=10.0, disabled=clear_segments)
 time_max = st.sidebar.number_input("Max Time (seconds)", value=time_max_val, step=10.0, disabled=clear_segments)
 
-# ADD FREE-FLOW TRAVEL TIME INPUT (set to 0 to avoid filtering vehicles by default)
+# ADD FREE-FLOW TRAVEL TIME INPUT 
 free_flow_tt = st.sidebar.number_input("Free-Flow Travel Time (seconds)", value=0.0, step=0.1)
 
 all_ids = sorted(df["vehicle_id"].unique())
@@ -74,7 +74,6 @@ selected_ids = st.sidebar.multiselect(
 )
 
 # FUNDAMENTAL DIAGRAM DATA SOURCE OPTION
-# CORRECTED: Default to False to use the segment filter for FD
 fd_from_full = st.sidebar.checkbox(
     "Use full dataset for Fundamental Diagram",
     value=False,
@@ -113,7 +112,7 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
     for vid, group in df_segment.groupby("vehicle_id"):
         group = group.sort_values("time")
         if len(group) > 1:
-            # TIME SPENT IN SEGMENT: from first to last point in the filtered data
+            # TIME SPENT IN SEGMENT
             entry_time = group.iloc[0]["time"]
             exit_time = group.iloc[-1]["time"]
             time_spent = exit_time - entry_time
@@ -124,7 +123,7 @@ def compute_traffic_metrics(df_segment, loc_min, loc_max, time_min, time_max, fr
                 if delay > 0:
                     delays.append(delay)
 
-            # DISTANCE TRAVELED IN SEGMENT: sum of absolute distances between consecutive points
+            # DISTANCE TRAVELED IN SEGMENT
             loc_diff = np.diff(group["location"])
             veh_distances = np.abs(loc_diff)
             total_distance_traveled += np.sum(veh_distances)
@@ -171,19 +170,19 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     if df_segment.empty:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # Use user-specified segment length for debug/context only
+    # USER-SPECIFIED SEGMENT LENGHT FOR DEBUG/CONTEXT ONLY 
     segment_length_ft = (loc_max - loc_min)
     segment_length_mi = segment_length_ft / 5280.0
     
-    # Guard against zero or negative segment length
+    # GUARD AGAINST ZERO OR NEGATIVE SEGMENT LENGHT
     if not np.isfinite(segment_length_mi) or segment_length_mi <= 0:
         return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
-    # COMPUTE MICROSCOPIC u–k PAIRS PER VEHICLE PER TIME STEP
+    # COMPUTE MICROSCOPIC U–K PAIRS PER VEHICLE PER TIME STEP
     density_flow_pairs = []
     density_speed_pairs = []
 
-    # Precompute instantaneous speeds (ft/s) per vehicle using forward differences
+    # PRECOMPUTE INSTANTANEOUS SPEED (FT/S) PER VEHICLE USING FORWARD DIFFERENCES 
     df_speed = df_segment.sort_values(["vehicle_id", "time"]).copy()
     df_speed["speed_fps"] = np.nan
     for vid, g in df_speed.groupby("vehicle_id"):
@@ -191,12 +190,12 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         dx = g["location"].shift(-1) - g["location"]
         dt = g["time"].shift(-1) - g["time"]
         speed = dx / dt
-        # Guard against zero/negative dt
+        # GUARD AGAINST ZERO/NEGATIVE DT
         speed = speed.where(dt > 0, np.nan)
-        # assign back; last row per vehicle remains NaN
+        # ASSIGN BACK / LAST ROW PER VEHICLES REMAINS NAN
         df_speed.loc[g.index, "speed_fps"] = speed
 
-    # Filter valid microscopic observations (finite, >0 ft/s, <300 ft/s)
+    # FILTER VALID MICROSCOPIC OBSERVATIONS (FINITE >0 FT/S, <300 FT/S)
     valid_mask = (
         df_speed["speed_fps"].replace([np.inf, -np.inf], np.nan).notna()
         & (df_speed["speed_fps"] > 0)
@@ -204,23 +203,23 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
     )
     valid_obs = df_speed[valid_mask]
 
-    # Compute microscopic density per vehicle per time step using space headway
+    # COMPUTE MICROSCOPIC DENSITY PER VEHICLE PER TIME STEP USING SPACE HEADWAY
     for t, group_t in valid_obs.groupby("time"):
-        # Sort by location (ascending, assuming downstream direction)
+        # SORT BY LOCATION 
         group_t = group_t.sort_values("location")
         locations = group_t["location"].values
         speeds = group_t["speed_fps"].values
 
-        # Compute space headways (distance to next vehicle ahead)
-        headways_ft = np.diff(locations)  # h_i = x_{i+1} - x_i
-        # For each vehicle i (except last), density k_i = 1 / h_i (veh/ft)
+        # COMPUTE SPACE HEADWAYS (DISTANCE TO THE NEXT VEHICLE AHEAD)
+        headways_ft = np.diff(locations)  
+        # FOR EACH VEHICLE I (EXCEPT LAST), DENSITY K_I = 1 / H_I (VEH/FT)
         for i in range(len(headways_ft)):
             h_ft = headways_ft[i]
             if h_ft > 0:
                 density_veh_per_ft = 1.0 / h_ft
-                density_veh_per_mi = density_veh_per_ft * 5280.0  # convert to veh/mi
-                u_mph = float(speeds[i]) * 3600.0 / 5280.0  # mph (speed of the trailing vehicle)
-                q_veh_hr = density_veh_per_mi * u_mph  # veh/hr via q = k * u
+                density_veh_per_mi = density_veh_per_ft * 5280.0  
+                u_mph = float(speeds[i]) * 3600.0 / 5280.0  
+                q_veh_hr = density_veh_per_mi * u_mph 
 
                 if density_veh_per_mi > 0 and u_mph > 0 and np.isfinite(u_mph):
                     density_speed_pairs.append((density_veh_per_mi, u_mph))
@@ -241,15 +240,15 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         return u_f * k * (1 - k / k_j)
 
     try:
-        # Fit Greenshields via linear regression on u-k: u = u_f - (u_f/k_j) * k
+        # FIT GREENSHIELDS VIA LINEAR REGRESSION ON U-K / U = U_F - (U_F/K_J) * K
         if len(density_speed_pairs) < 3:
             return {"Jam_Density": 0.0, "Free_Flow_Speed": 0.0, "Capacity": 0.0, "fitted_curve": None}
 
         ks = np.array([d for d, u in density_speed_pairs])
         us = np.array([u for d, u in density_speed_pairs])
 
-        # Optional basic filtering of extreme values
-        valid = np.isfinite(ks) & np.isfinite(us) & (ks > 0) & (us > 0) & (us < 1200)  # speeds in mph safeguarded
+        # OPTIONAL BASIC FILTERING OF EXTREME VALUES 
+        valid = np.isfinite(ks) & np.isfinite(us) & (ks > 0) & (us > 0) & (us < 1200) 
         ks = ks[valid]
         us = us[valid]
 
@@ -263,11 +262,11 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         if not np.isfinite(m) or m >= 0 or not np.isfinite(u_f) or u_f <= 0:
             raise ValueError("Invalid regression (non-negative slope or non-finite u_f)")
 
-        k_j = -u_f / m  # since m = -u_f / k_j
+        k_j = -u_f / m  
         if not np.isfinite(k_j) or k_j <= 0:
             raise ValueError("Invalid k_j from regression")
 
-        # Capacity at k = k_j / 2
+        # CAPACITY AT K = K_J / 2
         capacity = u_f * k_j / 4.0
         print(f"DEBUG: fitted u_f={u_f}, k_j={k_j}")
         print(f"DEBUG: capacity={capacity}")
@@ -285,17 +284,17 @@ def compute_fundamental_diagram(df_segment, loc_min, loc_max, time_min, time_max
         }
     except Exception as e:
         print(f"DEBUG: Exception in fitting (u-k regression fallback to q-k observed): {e}")
-        # FALLBACK: Use simple estimation based on observed q-k data
+        # FALLBACK
         if len(density_flow_pairs) > 0:
             max_density = max(d for d, f in density_flow_pairs)
             max_flow = max(f for d, f in density_flow_pairs)
             avg_speed = max_flow / max_density if max_density > 0 else 0
 
-            # Estimate jam density as 2x max observed density
+            # ESTIMATE JAM DENSITY AS 2X MAX OBSERVED DENSITY 
             jam_density = max_density * 2
-            # Estimate free flow speed as max observed speed
+            # ESTIMATE FREE FLOW SPEED AS MAX OBSERVED SPEED 
             free_flow_speed = avg_speed
-            # Estimate capacity using Greenshields capacity formula
+            # ESTIMATE CAPACITY USING GREENSHIELDS CAPACITY FORMULA 
             capacity = free_flow_speed * jam_density / 4.0
 
             # CREATE SIMPLE CURVE WITH ESTIMATES
