@@ -801,7 +801,7 @@ st.plotly_chart(fig_tri, use_container_width=True)
 
 # 3-DETECTOR ESTIMATION AND COMPARISON SECTION
 if not estimated_cum_detector_2_df.empty and not cum_detector_2_df.empty:
-st.header("3-Detector Estimation vs Actual at Detector 2")
+    st.header("3-Detector Estimation vs Actual at Detector 2")
 
 # COMPUTE COMPARISON METRICS
 merged_df = pd.merge(
