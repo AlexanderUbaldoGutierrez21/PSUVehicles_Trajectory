@@ -413,25 +413,31 @@ def triangular_fundamental_diagram(u_f, w_b, k_j):
 def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f, w_b, k_j, time_min, time_max):
     """
     Estimate cumulative at location 2 using 3-detector methodology with triangular FD.
+    Uses kinematic wave theory with triangular fundamental diagram to propagate traffic states.
     cum_1_df, cum_3_df: DataFrames with 'time' and 'cumulative' columns
     loc_1, loc_3, loc_2: detector locations (ft)
-    u_f, w_b, k_j: triangular FD parameters
+    u_f, w_b, k_j: triangular FD parameters (mph, mph, veh/mi)
     """
     if cum_1_df.empty or cum_3_df.empty:
         return pd.DataFrame()
 
-    # CONVERT TO MPH AND VEH/MI UNITS
-    u_f_fps = u_f * 5280 / 3600  # ft/s
-    w_b_fps = w_b * 5280 / 3600  # ft/s
+    # CONVERT UNITS
+    u_f_fps = u_f * 5280 / 3600  # free flow speed: mph to ft/s
+    w_b_fps = w_b * 5280 / 3600  # backward wave speed: mph to ft/s
+    k_j_veh_per_ft = k_j / 5280  # jam density: veh/mi to veh/ft
 
-    # DISTANCE BETWEEN DETECTORS
-    d_13 = abs(loc_3 - loc_1)  # ft
-    d_12 = abs(loc_2 - loc_1)  # ft
+    # DISTANCES BETWEEN DETECTORS
+    d_12 = abs(loc_2 - loc_1)  # ft (upstream to middle)
+    d_23 = abs(loc_3 - loc_2)  # ft (middle to downstream)
+
+    # TRIANGULAR FD PARAMETERS
+    k_c = (u_f / (u_f + w_b)) * k_j  # critical density (veh/mi)
+    q_c = u_f * k_c  # capacity (veh/hr)
 
     estimated_cum = []
 
     for t in np.arange(time_min, time_max + 1, 1):
-        # Get cumulative at detectors 1 and 3 at time t
+        # GET CUMULATIVE COUNTS AT DETECTORS 1 AND 3 AT TIME t
         cum_1_t = cum_1_df[cum_1_df["time"] == t]["cumulative"].values
         cum_3_t = cum_3_df[cum_3_df["time"] == t]["cumulative"].values
 
@@ -442,32 +448,74 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
         cum_1_t = cum_1_t[0]
         cum_3_t = cum_3_t[0]
 
-        # TIME FOR FREE FLOW TRAVEL BETWEEN DETECTORS
-        t_ff_13 = d_13 / u_f_fps  # seconds
-        t_ff_12 = d_12 / u_f_fps  # seconds
+        # COMPUTE INSTANTANEOUS FLOW RATES (DERIVATIVE OF CUMULATIVE CURVES)
+        # Use finite differences to estimate flow at detectors
+        flow_1_t = estimate_flow_at_time(cum_1_df, t, time_min, time_max)
+        flow_3_t = estimate_flow_at_time(cum_3_df, t, time_min, time_max)
 
-        # Estimate density and flow using triangular FD
-        # This is a simplified approach - in practice, more sophisticated methods exist
-        # For triangular FD, we can estimate based on the difference in cumulative counts
+        # ESTIMATE TRAFFIC STATE AT DETECTOR 2 USING KINEMATIC WAVE THEORY
+        # This is a simplified implementation - full solution would require solving PDEs
 
-        # Simple estimation: assume linear propagation for free flow
-        # More accurate would involve solving the kinematic wave equations
-        if cum_3_t > cum_1_t:
-            # Traffic is moving, estimate based on time shift
-            time_shift = t_ff_12
-            t_est = t - time_shift
-            if t_est >= time_min:
-                cum_est = cum_1_df[cum_1_df["time"] <= t_est]["cumulative"].max()
+        # TIME FOR TRAFFIC TO TRAVEL FROM DETECTOR 1 TO 2
+        t_travel_12 = d_12 / u_f_fps  # free flow travel time
+
+        # TIME FOR TRAFFIC TO TRAVEL FROM DETECTOR 2 TO 3
+        t_travel_23 = d_23 / u_f_fps  # free flow travel time
+
+        # ESTIMATE CUMULATIVE AT DETECTOR 2
+        # For triangular FD, we use the principle that traffic states propagate at characteristic speeds
+        if flow_3_t > flow_1_t:
+            # POSSIBLE FREE FLOW CONDITIONS - USE UPSTREAM FLOW PROPAGATED
+            t_source = t - t_travel_12
+            if t_source >= time_min:
+                cum_est = cum_1_df[cum_1_df["time"] <= t_source]["cumulative"].max()
                 if np.isnan(cum_est):
                     cum_est = 0
             else:
                 cum_est = 0
         else:
-            cum_est = cum_1_t  # If no vehicles passed detector 3, assume same as detector 1
+            # POSSIBLE CONGESTED CONDITIONS - USE DOWNSTREAM BOUNDARY CONDITION
+            # Simplified: assume congestion propagates backward at w_b
+            t_congestion = t - (d_23 / w_b_fps) + (d_12 / w_b_fps)
+            if t_congestion >= time_min:
+                cum_est = cum_3_df[cum_3_df["time"] <= t_congestion]["cumulative"].max()
+                if np.isnan(cum_est):
+                    cum_est = cum_1_t
+            else:
+                cum_est = cum_1_t
 
-        estimated_cum.append({"time": t, "cumulative": int(cum_est)})
+        estimated_cum.append({"time": t, "cumulative": int(max(0, cum_est))})
 
     return pd.DataFrame(estimated_cum)
+
+def estimate_flow_at_time(cum_df, t, time_min, time_max, dt=1.0):
+    """
+    Estimate instantaneous flow rate at time t using finite differences on cumulative curve.
+    """
+    if cum_df.empty:
+        return 0.0
+
+    # FIND CUMULATIVE VALUES AT t AND t-dt
+    cum_t = cum_df[cum_df["time"] == t]["cumulative"]
+    cum_t_prev = cum_df[cum_df["time"] == (t - dt)]["cumulative"]
+
+    if cum_t.empty:
+        return 0.0
+
+    cum_t_val = cum_t.values[0]
+
+    if cum_t_prev.empty:
+        # USE FORWARD DIFFERENCE IF NO PREVIOUS POINT
+        cum_t_next = cum_df[cum_df["time"] == (t + dt)]["cumulative"]
+        if cum_t_next.empty:
+            return 0.0
+        flow = (cum_t_next.values[0] - cum_t_val) / dt
+    else:
+        # USE CENTRAL DIFFERENCE
+        flow = (cum_t_val - cum_t_prev.values[0]) / dt
+
+    # CONVERT FROM veh/dt TO veh/hr
+    return max(0.0, flow * 3600.0 / dt)
 
 # COMPUTE METRICS FOR THE SEGMENT
 metrics = compute_traffic_metrics(segment_filtered_df, loc_min, loc_max, time_min, time_max, free_flow_tt)
