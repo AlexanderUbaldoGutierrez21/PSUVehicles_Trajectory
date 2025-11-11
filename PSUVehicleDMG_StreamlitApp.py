@@ -566,9 +566,9 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     )
 
     # UPDATE TRACES FOR CLARITY WITH CUSTOM COLORS
-    fig2.data[0].name = "Cumulative Input"
+    fig2.data[0].name = "Arrival Curve"
     fig2.data[0].line.color = "#0D1B2A"
-    fig2.data[1].name = "Cumulative Output"
+    fig2.data[1].name = "Departure Curve"
     fig2.data[1].line.color = "#2A6F97"
     fig2.data[2].name = "Virtual Arrival (500 FT)"
     fig2.data[2].line.color = "#7AD0D9"
@@ -585,14 +585,14 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     fig2.add_annotation(
         x=time_min + x_range * 0.05,
         y=y_max * 1.1,
-        text="<span style='color:#0D1B2A'>●</span> Cumulative Input (veh)",
+        text="<span style='color:#0D1B2A'>●</span> Arrival Curve (veh)",
         showarrow=False,
         xanchor="left",
     )
     fig2.add_annotation(
         x=time_min + x_range * 0.4,
         y=y_max * 1.1,
-        text="<span style='color:#415A77'>●</span> Cumulative Output (veh)",
+        text="<span style='color:#415A77'>●</span> Departure Curve (veh)",
         showarrow=False,
         xanchor="left",
     )
