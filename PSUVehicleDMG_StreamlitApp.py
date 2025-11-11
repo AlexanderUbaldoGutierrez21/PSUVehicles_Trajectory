@@ -533,7 +533,7 @@ estimated_cum_detector_2_df = estimate_cumulative_3_detector(
 
 # PLOT INPUT-OUTPUT AND QUEUING SCENARIO
 if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cum_df.empty:
-    st.header("Input-Output and Queuing Scenario")
+    st.header("Input-Output / Queuing Scenario")
 
     # DISPLAY QUEUING METRICS BELOW THE HEADER (similar to other sections)
     col1, col2, col3, col4 = st.columns(4)
@@ -551,7 +551,7 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
         input_cum_df,
         x="time",
         y="cumulative",
-        title="💻 Input-Output and Queuing Diagram",
+        title="💻 Cumulative Count Diagram",
         labels={"time": "t (seconds)", "cumulative": "N (veh)"}
     )
 
@@ -609,55 +609,6 @@ if not input_cum_df.empty and not output_cum_df.empty and not virtual_arrival_cu
     )
 
     st.plotly_chart(fig2, use_container_width=True)
-
-# DETECTOR CUMULATIVE CURVES SECTION
-if not cum_detector_1_df.empty and not cum_detector_2_df.empty and not cum_detector_3_df.empty:
-    st.header("Detector Cumulative Curves")
-
-    # DISPLAY DETECTOR METRICS
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(f"Detector 1 ({detector_1_loc} ft)", f"{cum_detector_1_df['cumulative'].max()} veh")
-    with col2:
-        st.metric(f"Detector 2 ({detector_2_loc} ft)", f"{cum_detector_2_df['cumulative'].max()} veh")
-    with col3:
-        st.metric(f"Detector 3 ({detector_3_loc} ft)", f"{cum_detector_3_df['cumulative'].max()} veh")
-    with col4:
-        st.empty()
-
-    # CREATE THE PLOT
-    fig_det = px.line(
-        cum_detector_1_df,
-        x="time",
-        y="cumulative",
-        title="💻 Detector Cumulative Vehicle Counts",
-        labels={"time": "t (seconds)", "cumulative": "N (veh)"}
-    )
-
-    # ADD DETECTOR 2 CURVE
-    fig_det.add_trace(
-        px.line(cum_detector_2_df, x="time", y="cumulative").data[0]
-    )
-
-    # ADD DETECTOR 3 CURVE
-    fig_det.add_trace(
-        px.line(cum_detector_3_df, x="time", y="cumulative").data[0]
-    )
-
-    # UPDATE TRACES FOR CLARITY
-    fig_det.data[0].name = f"Detector 1 ({detector_1_loc} ft)"
-    fig_det.data[0].line.color = "#0D1B2A"
-    fig_det.data[1].name = f"Detector 2 ({detector_2_loc} ft)"
-    fig_det.data[1].line.color = "#2A6F97"
-    fig_det.data[2].name = f"Detector 3 ({detector_3_loc} ft)"
-    fig_det.data[2].line.color = "#7AD0D9"
-
-    fig_det.update_layout(
-        legend=dict(title="Detectors"),
-        hovermode="x unified"
-    )
-
-    st.plotly_chart(fig_det, use_container_width=True)
 
 # FUNDAMENTAL DIAGRAM SECTION
 if fd_metrics["fitted_curve"] is not None:
@@ -791,6 +742,55 @@ fig_tri.update_layout(
 )
 
 st.plotly_chart(fig_tri, use_container_width=True)
+
+# DETECTOR CUMULATIVE CURVES SECTION
+if not cum_detector_1_df.empty and not cum_detector_2_df.empty and not cum_detector_3_df.empty:
+    st.header("Detector Cumulative Curves")
+
+    # DISPLAY DETECTOR METRICS
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric(f"Detector 1 ({detector_1_loc} ft)", f"{cum_detector_1_df['cumulative'].max()} veh")
+    with col2:
+        st.metric(f"Detector 2 ({detector_2_loc} ft)", f"{cum_detector_2_df['cumulative'].max()} veh")
+    with col3:
+        st.metric(f"Detector 3 ({detector_3_loc} ft)", f"{cum_detector_3_df['cumulative'].max()} veh")
+    with col4:
+        st.empty()
+
+    # CREATE THE PLOT
+    fig_det = px.line(
+        cum_detector_1_df,
+        x="time",
+        y="cumulative",
+        title="💻 Detector Cumulative Vehicle Counts",
+        labels={"time": "t (seconds)", "cumulative": "N (veh)"}
+    )
+
+    # ADD DETECTOR 2 CURVE
+    fig_det.add_trace(
+        px.line(cum_detector_2_df, x="time", y="cumulative").data[0]
+    )
+
+    # ADD DETECTOR 3 CURVE
+    fig_det.add_trace(
+        px.line(cum_detector_3_df, x="time", y="cumulative").data[0]
+    )
+
+    # UPDATE TRACES FOR CLARITY
+    fig_det.data[0].name = f"Detector 1 ({detector_1_loc} ft)"
+    fig_det.data[0].line.color = "#0D1B2A"
+    fig_det.data[1].name = f"Detector 2 ({detector_2_loc} ft)"
+    fig_det.data[1].line.color = "#2A6F97"
+    fig_det.data[2].name = f"Detector 3 ({detector_3_loc} ft)"
+    fig_det.data[2].line.color = "#7AD0D9"
+
+    fig_det.update_layout(
+        legend=dict(title="Detectors"),
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig_det, use_container_width=True)
 
 # 3-DETECTOR ESTIMATION AND COMPARISON SECTION
 if not estimated_cum_detector_2_df.empty and not cum_detector_2_df.empty:
