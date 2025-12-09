@@ -902,6 +902,7 @@ if not merged_df.empty:
         mape = np.mean(np.abs(non_zero_actual["abs_diff"] / non_zero_actual["actual"])) * 100
 # TIME-SPACE ANALYSIS AND SIGNAL OFFSET OPTIMIZATION
 try:
+    st.write("Starting Time-Space Analysis")
     st.header("Time-Space Analysis and Signal Offset Optimization")
 
     # System Parameters
