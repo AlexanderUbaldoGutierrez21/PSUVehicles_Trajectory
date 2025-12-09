@@ -978,6 +978,7 @@ try:
 
     # Extract arrival times
     arrival_times = extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END)
+    st.write(f"Debug: Number of qualifying vehicles: {len(arrival_times)}")
 
     if arrival_times:
         # Calculate existing delay
