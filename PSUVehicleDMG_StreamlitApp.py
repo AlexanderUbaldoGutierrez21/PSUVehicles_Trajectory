@@ -913,6 +913,8 @@ try:
     DEMAND_PERIOD_END = full_time_max  # Analysis period end time (s)
     EXISTING_OFFSET = 0  # Baseline offset for delay comparison (s)
 
+    st.write(f"Debug: Max location: {full_loc_max}, L_S1: {L_S1}, L_S2: {L_S2}, Max time: {full_time_max}")
+
     # Function to extract arrival times using linear interpolation
     def extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END):
         arrival_times = {}
