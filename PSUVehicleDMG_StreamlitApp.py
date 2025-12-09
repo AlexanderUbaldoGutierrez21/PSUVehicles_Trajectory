@@ -901,141 +901,144 @@ if not merged_df.empty:
     if not non_zero_actual.empty:
         mape = np.mean(np.abs(non_zero_actual["abs_diff"] / non_zero_actual["actual"])) * 100
 # TIME-SPACE ANALYSIS AND SIGNAL OFFSET OPTIMIZATION
-st.header("Time-Space Analysis and Signal Offset Optimization")
+try:
+    st.header("Time-Space Analysis and Signal Offset Optimization")
 
-# System Parameters
-L_S1 = 400  # Signal 1 position (ft)
-L_S2 = 800  # Signal 2 position (ft)
-CYCLE = 60  # Signal cycle length (s)
-GREEN_TIME = 30  # Green phase duration (s)
-DEMAND_PERIOD_END = 600  # Analysis period end time (s)
-EXISTING_OFFSET = 0  # Baseline offset for delay comparison (s)
+    # System Parameters
+    L_S1 = 400  # Signal 1 position (ft)
+    L_S2 = 800  # Signal 2 position (ft)
+    CYCLE = 60  # Signal cycle length (s)
+    GREEN_TIME = 30  # Green phase duration (s)
+    DEMAND_PERIOD_END = 600  # Analysis period end time (s)
+    EXISTING_OFFSET = 0  # Baseline offset for delay comparison (s)
 
-# Function to extract arrival times using linear interpolation
-def extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END):
-    arrival_times = {}
-    for vid, group in df.groupby("vehicle_id"):
-        group = group.sort_values("time")
-        # Interpolate arrival at L_S1
-        if group["location"].min() <= L_S1 <= group["location"].max():
-            before = group[group["location"] <= L_S1]
-            after = group[group["location"] >= L_S1]
-            if not before.empty and not after.empty:
-                p1 = before.iloc[-1]
-                p2 = after.iloc[0]
-                if p1["location"] < L_S1 < p2["location"]:
-                    t_S1 = p1["time"] + (p2["time"] - p1["time"]) * (L_S1 - p1["location"]) / (p2["location"] - p1["location"])
-                elif p1["location"] == L_S1:
-                    t_S1 = p1["time"]
+    # Function to extract arrival times using linear interpolation
+    def extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END):
+        arrival_times = {}
+        for vid, group in df.groupby("vehicle_id"):
+            group = group.sort_values("time")
+            # Interpolate arrival at L_S1
+            if group["location"].min() <= L_S1 <= group["location"].max():
+                before = group[group["location"] <= L_S1]
+                after = group[group["location"] >= L_S1]
+                if not before.empty and not after.empty:
+                    p1 = before.iloc[-1]
+                    p2 = after.iloc[0]
+                    if p1["location"] < L_S1 < p2["location"]:
+                        t_S1 = p1["time"] + (p2["time"] - p1["time"]) * (L_S1 - p1["location"]) / (p2["location"] - p1["location"])
+                    elif p1["location"] == L_S1:
+                        t_S1 = p1["time"]
+                    else:
+                        continue
                 else:
                     continue
             else:
                 continue
-        else:
-            continue
-        if t_S1 > DEMAND_PERIOD_END:
-            continue
-        # Interpolate arrival at L_S2
-        if group["location"].min() <= L_S2 <= group["location"].max():
-            before = group[group["location"] <= L_S2]
-            after = group[group["location"] >= L_S2]
-            if not before.empty and not after.empty:
-                p1 = before.iloc[-1]
-                p2 = after.iloc[0]
-                if p1["location"] < L_S2 < p2["location"]:
-                    t_S2 = p1["time"] + (p2["time"] - p1["time"]) * (L_S2 - p1["location"]) / (p2["location"] - p1["location"])
-                elif p1["location"] == L_S2:
-                    t_S2 = p1["time"]
+            if t_S1 > DEMAND_PERIOD_END:
+                continue
+            # Interpolate arrival at L_S2
+            if group["location"].min() <= L_S2 <= group["location"].max():
+                before = group[group["location"] <= L_S2]
+                after = group[group["location"] >= L_S2]
+                if not before.empty and not after.empty:
+                    p1 = before.iloc[-1]
+                    p2 = after.iloc[0]
+                    if p1["location"] < L_S2 < p2["location"]:
+                        t_S2 = p1["time"] + (p2["time"] - p1["time"]) * (L_S2 - p1["location"]) / (p2["location"] - p1["location"])
+                    elif p1["location"] == L_S2:
+                        t_S2 = p1["time"]
+                    else:
+                        continue
                 else:
                     continue
             else:
                 continue
-        else:
-            continue
-        arrival_times[vid] = {"t_S1": t_S1, "t_S2": t_S2}
-    return arrival_times
+            arrival_times[vid] = {"t_S1": t_S1, "t_S2": t_S2}
+        return arrival_times
 
-# Function to calculate delay at a signal
-def calculate_delay(arrival_time, offset, cycle, green_time):
-    cycle_pos = (arrival_time - offset) % cycle
-    if cycle_pos < green_time:
-        return 0
+    # Function to calculate delay at a signal
+    def calculate_delay(arrival_time, offset, cycle, green_time):
+        cycle_pos = (arrival_time - offset) % cycle
+        if cycle_pos < green_time:
+            return 0
+        else:
+            return cycle - cycle_pos
+
+    # Function to compute total delay for given offset
+    def compute_total_delay(arrival_times, phi, cycle, green_time):
+        total_delay = 0
+        for vid, times in arrival_times.items():
+            delay_S1 = calculate_delay(times["t_S1"], 0, cycle, green_time)
+            delay_S2 = calculate_delay(times["t_S2"], phi, cycle, green_time)
+            total_delay += delay_S1 + delay_S2
+        return total_delay
+
+    # Extract arrival times
+    arrival_times = extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END)
+
+    if arrival_times:
+        # Calculate existing delay
+        D_exist = compute_total_delay(arrival_times, EXISTING_OFFSET, CYCLE, GREEN_TIME)
+
+        # Optimize offset
+        min_delay = float('inf')
+        optimal_phi = 0
+        for phi in range(CYCLE):
+            delay = compute_total_delay(arrival_times, phi, CYCLE, GREEN_TIME)
+            if delay < min_delay:
+                min_delay = delay
+                optimal_phi = phi
+
+        D_opt = min_delay
+        delay_saved = D_exist - D_opt
+
+        # Display results
+        st.subheader("Optimization Results")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Optimal Offset (φ_opt)", f"{optimal_phi} s")
+        with col2:
+            st.metric("Total Existing Delay", f"{D_exist:.1f} veh-s")
+        with col3:
+            st.metric("Total Optimal Delay", f"{D_opt:.1f} veh-s")
+        with col4:
+            st.metric("Delay Saved", f"{delay_saved:.1f} veh-s")
+
+        # Queuing Diagram
+        # Get arrival times at S2
+        t_S2_arr_list = sorted([times["t_S2"] for times in arrival_times.values()])
+
+        # Compute departure times
+        departures = []
+        for vid, times in arrival_times.items():
+            delay_S2 = calculate_delay(times["t_S2"], optimal_phi, CYCLE, GREEN_TIME)
+            dep_time = times["t_S2"] + delay_S2
+            departures.append(dep_time)
+        departures = sorted(departures)
+
+        # Simulate queue over time
+        time_points = np.arange(0, DEMAND_PERIOD_END + 1, 1)
+        queue_lengths = []
+        for t in time_points:
+            arrivals_cum = sum(1 for t_arr in t_S2_arr_list if t_arr <= t)
+            deps_cum = sum(1 for dep in departures if dep <= t)
+            queue = arrivals_cum - deps_cum
+            queue_lengths.append(queue)
+
+        # Plot queuing diagram
+        queue_df = pd.DataFrame({"time": time_points, "queue_length": queue_lengths})
+        fig_queue = px.line(
+            queue_df,
+            x="time",
+            y="queue_length",
+            title=f"Queuing Diagram: Optimal Offset (φ_opt = {optimal_phi} s)",
+            labels={"time": "Time (s)", "queue_length": "Queue Length (veh)"}
+        )
+        st.plotly_chart(fig_queue, use_container_width=True)
     else:
-        return cycle - cycle_pos
-
-# Function to compute total delay for given offset
-def compute_total_delay(arrival_times, phi, cycle, green_time):
-    total_delay = 0
-    for vid, times in arrival_times.items():
-        delay_S1 = calculate_delay(times["t_S1"], 0, cycle, green_time)
-        delay_S2 = calculate_delay(times["t_S2"], phi, cycle, green_time)
-        total_delay += delay_S1 + delay_S2
-    return total_delay
-
-# Extract arrival times
-arrival_times = extract_arrival_times(df, L_S1, L_S2, DEMAND_PERIOD_END)
-
-if arrival_times:
-    # Calculate existing delay
-    D_exist = compute_total_delay(arrival_times, EXISTING_OFFSET, CYCLE, GREEN_TIME)
-
-    # Optimize offset
-    min_delay = float('inf')
-    optimal_phi = 0
-    for phi in range(CYCLE):
-        delay = compute_total_delay(arrival_times, phi, CYCLE, GREEN_TIME)
-        if delay < min_delay:
-            min_delay = delay
-            optimal_phi = phi
-
-    D_opt = min_delay
-    delay_saved = D_exist - D_opt
-
-    # Display results
-    st.subheader("Optimization Results")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Optimal Offset (φ_opt)", f"{optimal_phi} s")
-    with col2:
-        st.metric("Total Existing Delay", f"{D_exist:.1f} veh-s")
-    with col3:
-        st.metric("Total Optimal Delay", f"{D_opt:.1f} veh-s")
-    with col4:
-        st.metric("Delay Saved", f"{delay_saved:.1f} veh-s")
-
-    # Queuing Diagram
-    # Get arrival times at S2
-    t_S2_arr_list = sorted([times["t_S2"] for times in arrival_times.values()])
-
-    # Compute departure times
-    departures = []
-    for vid, times in arrival_times.items():
-        delay_S2 = calculate_delay(times["t_S2"], optimal_phi, CYCLE, GREEN_TIME)
-        dep_time = times["t_S2"] + delay_S2
-        departures.append(dep_time)
-    departures = sorted(departures)
-
-    # Simulate queue over time
-    time_points = np.arange(0, DEMAND_PERIOD_END + 1, 1)
-    queue_lengths = []
-    for t in time_points:
-        arrivals_cum = sum(1 for t_arr in t_S2_arr_list if t_arr <= t)
-        deps_cum = sum(1 for dep in departures if dep <= t)
-        queue = arrivals_cum - deps_cum
-        queue_lengths.append(queue)
-
-    # Plot queuing diagram
-    queue_df = pd.DataFrame({"time": time_points, "queue_length": queue_lengths})
-    fig_queue = px.line(
-        queue_df,
-        x="time",
-        y="queue_length",
-        title=f"Queuing Diagram: Optimal Offset (φ_opt = {optimal_phi} s)",
-        labels={"time": "Time (s)", "queue_length": "Queue Length (veh)"}
-    )
-    st.plotly_chart(fig_queue, use_container_width=True)
-else:
-    st.write("No qualifying vehicles found.")
+        st.write("No qualifying vehicles found.")
+except Exception as e:
+    st.error(f"Error in Time-Space Analysis: {str(e)}")
 
     # ANALYSIS SECTION
     st.subheader("Estimation Analysis")
