@@ -904,8 +904,8 @@ if not merged_df.empty:
 st.header("Time-Space Analysis and Signal Offset Optimization")
 
 # System Parameters
-L_S1 = 400  # Signal 1 position (m)
-L_S2 = 800  # Signal 2 position (m)
+L_S1 = 1312  # Signal 1 position (ft) - converted from 400m
+L_S2 = 2625  # Signal 2 position (ft) - converted from 800m
 CYCLE = 60  # Signal cycle length (s)
 GREEN_TIME = 30  # Green phase duration (s)
 DEMAND_PERIOD_END = 600  # Analysis period end time (s)
