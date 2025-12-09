@@ -905,11 +905,11 @@ try:
     st.header("Time-Space Analysis and Signal Offset Optimization")
 
     # System Parameters
-    L_S1 = 400  # Signal 1 position (ft)
-    L_S2 = 800  # Signal 2 position (ft)
+    L_S1 = full_loc_max * 0.4  # Signal 1 position (ft) - 40% of max location
+    L_S2 = full_loc_max * 0.8  # Signal 2 position (ft) - 80% of max location
     CYCLE = 60  # Signal cycle length (s)
     GREEN_TIME = 30  # Green phase duration (s)
-    DEMAND_PERIOD_END = 600  # Analysis period end time (s)
+    DEMAND_PERIOD_END = full_time_max  # Analysis period end time (s)
     EXISTING_OFFSET = 0  # Baseline offset for delay comparison (s)
 
     # Function to extract arrival times using linear interpolation
