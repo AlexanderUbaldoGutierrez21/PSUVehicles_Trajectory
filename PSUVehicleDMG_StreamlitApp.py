@@ -456,11 +456,11 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
     for t in np.arange(time_min, time_max + 1, 1):
         # UPSTREAM PREDICTION: N50(t - tau_U)
         t_U = t - tau_U
-        N_U_pred = get_cumulative_count(cum_detector_1_df, t_U, time_min, time_max)
+        N_U_pred = get_cumulative_count(cum_1_df, t_U, time_min, time_max)
 
         # DOWNSTREAM PREDICTION: N450(t + tau_D) - Delta_N
         t_D = t + tau_D
-        N_D_pred_raw = get_cumulative_count(cum_detector_3_df, t_D, time_min, time_max)
+        N_D_pred_raw = get_cumulative_count(cum_3_df, t_D, time_min, time_max)
         N_D_pred = max(0, N_D_pred_raw - Delta_N)  # Ensure count is non-negative
 
         # UNIFIED PREDICTION: min(N_U_pred, N_D_pred)
