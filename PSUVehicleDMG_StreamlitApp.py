@@ -356,27 +356,35 @@ def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, 
 # FUNCTION TO COMPUTE CUMULATIVE VEHICLES PASSED A SPECIFIC LOCATION
 def compute_cumulative_at_location(df_full, location, time_min, time_max):
     """
-    Compute cumulative vehicles that have passed a specific location by time t.
-    A vehicle has "passed" the location if its maximum location >= location.
+    Compute cumulative vehicles that have passed a specific location by time t,
+    only tracking passages that occur within the [time_min, time_max] window.
     """
     if df_full.empty:
         return pd.DataFrame()
 
-    # For each vehicle, find the time when it first reaches or exceeds the location
     passage_times = []
+
+    # Iterate over all unique vehicles in the full dataset
     for vid, group in df_full.groupby("vehicle_id"):
         group = group.sort_values("time")
-        # Find first time where location >= target_location
+
+        # Find the first time where location >= target_location
         passed = group[group["location"] >= location]
+
         if not passed.empty:
             passage_time = passed.iloc[0]["time"]
-            passage_times.append(passage_time)
+
+            # --- CRITICAL FIX ---
+            # ONLY count the passage if it occurs within the time window
+            if passage_time >= time_min and passage_time <= time_max:
+                passage_times.append(passage_time)
 
     passage_times = sorted(passage_times)
 
-    # Compute cumulative counts
+    # Compute cumulative counts (loop remains the same)
     cum_data = []
     for t in np.arange(time_min, time_max + 1, 1):
+        # We only count passages that occurred <= t
         cum_count = sum(1 for pt in passage_times if pt <= t)
         cum_data.append({"time": t, "cumulative": cum_count})
 
