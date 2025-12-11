@@ -437,38 +437,44 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
     # Distance in miles: (loc_3 - loc_2) / 5280
     Delta_N = k_j_veh_per_mi * (loc_3 - loc_2) / 5280.0
 
-    # Define a helper function to get N(t) for any time, handling interpolation
-    def get_cumulative_count(cum_df, t, time_min, time_max):
-        # If t is outside range, return 0 or max count
-        if t <= time_min:
+    # -----------------------------------------------------------------
+    # CRITICAL FIX: Robust Step Function Lookup (Helper Function)
+    # -----------------------------------------------------------------
+    def get_cumulative_count_robust(cum_df, t_lookup, time_min, time_max):
+        """
+        Retrieves cumulative count N(t_lookup) for any time t_lookup (float).
+        N(t) is a step function; we need the count at the largest integer time <= t_lookup.
+        """
+        # If t_lookup is before start time, count is 0
+        if t_lookup < time_min:
             return 0
 
-        # KEY CORRECTION: Round the time down to the nearest integer second
-        # to robustly handle floating point values from time shifts (t +/- tau).
-        # We ensure we only look up data at the recorded integer seconds.
-        lookup_time = int(np.floor(t))
+        # Round the lookup time down to the largest available integer time
+        # This handles cases like t=4.999 or t=5.001 correctly
+        lookup_time = int(np.floor(t_lookup))
 
-        # Find the cumulative count at the calculated integer time
-        lookup_df = cum_df[cum_df["time"] == lookup_time]
+        # Filter for times less than or equal to the lookup time
+        lookup_df = cum_df[cum_df["time"] <= lookup_time]
 
         if lookup_df.empty:
-            # If the specific time point is missing (shouldn't happen with np.arange loop),
-            # default to 0.
-            # In a true step function lookup, we should find the last available count <= t.
-            # Since we generate cum_df for all integer seconds, we can trust the exact match.
-            return cum_df[cum_df["time"] <= t]["cumulative"].max() if not cum_df.empty else 0
-        else:
-            return lookup_df["cumulative"].iloc[0]
+            return 0
+
+        # The max value in the filtered group is the cumulative count N(t)
+        # We must use the last recorded value if multiple steps occur at the same floor time.
+        # Since cum_df is generated at 1-second intervals, max is the safe approach.
+        return lookup_df["cumulative"].max()
 
     estimated_cum = []
     for t in np.arange(time_min, time_max + 1, 1):
-        # UPSTREAM PREDICTION: N50(t - tau_U)
+        # 1. UPSTREAM PREDICTION (Free Flow Wave)
+        # N_U_pred = N_50(t - tau_U)
         t_U = t - tau_U
-        N_U_pred = get_cumulative_count(cum_1_df, t_U, time_min, time_max)
+        N_U_pred = get_cumulative_count_robust(cum_1_df, t_U, time_min, time_max)
 
-        # DOWNSTREAM PREDICTION: N450(t + tau_D) - Delta_N
+        # 2. DOWNSTREAM PREDICTION (Congestion Wave)
+        # N_D_pred = N_450(t + tau_D) - Delta_N
         t_D = t + tau_D
-        N_D_pred_raw = get_cumulative_count(cum_3_df, t_D, time_min, time_max)
+        N_D_pred_raw = get_cumulative_count_robust(cum_3_df, t_D, time_min, time_max)
         N_D_pred = max(0, N_D_pred_raw - Delta_N)  # Ensure count is non-negative
 
         # UNIFIED PREDICTION: min(N_U_pred, N_D_pred)
