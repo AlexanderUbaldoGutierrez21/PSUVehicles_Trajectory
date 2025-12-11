@@ -433,10 +433,10 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
 
     # CALCULATE SHIFTS
     # 1. UPSTREAM TIME SHIFT (TAU_U) - FREE FLOW PROPAGATION
-    tau_U = (loc_2 - loc_1) / u_f_fps
+    tau_U = round((loc_2 - loc_1) / u_f_fps)
 
     # 2. DOWNSTREAM TIME SHIFT (TAU_D) - CONGESTION WAVE PROPAGATION
-    tau_D = (loc_3 - loc_2) / w_b_fps
+    tau_D = round((loc_3 - loc_2) / w_b_fps)
 
     # 3. VERTICAL SHIFT (DELTA N) - STORAGE CAPACITY BETWEEN M AND D
     # DISTANCE IN MILES: (LOC_3 - LOC_2) / 5280
