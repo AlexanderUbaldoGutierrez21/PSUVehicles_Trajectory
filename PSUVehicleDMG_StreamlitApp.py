@@ -442,15 +442,23 @@ def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f,
         # If t is outside range, return 0 or max count
         if t <= time_min:
             return 0
-        if t >= time_max:
-            return cum_df["cumulative"].max() if not cum_df.empty else 0
 
-        # Find the largest time <= t
-        lookup_df = cum_df[cum_df["time"] <= t]
+        # KEY CORRECTION: Round the time down to the nearest integer second
+        # to robustly handle floating point values from time shifts (t +/- tau).
+        # We ensure we only look up data at the recorded integer seconds.
+        lookup_time = int(np.floor(t))
+
+        # Find the cumulative count at the calculated integer time
+        lookup_df = cum_df[cum_df["time"] == lookup_time]
+
         if lookup_df.empty:
-            return 0
-        # Use the max cumulative count up to that time (N(t) is a step function)
-        return lookup_df["cumulative"].max()
+            # If the specific time point is missing (shouldn't happen with np.arange loop),
+            # default to 0.
+            # In a true step function lookup, we should find the last available count <= t.
+            # Since we generate cum_df for all integer seconds, we can trust the exact match.
+            return cum_df[cum_df["time"] <= t]["cumulative"].max() if not cum_df.empty else 0
+        else:
+            return lookup_df["cumulative"].iloc[0]
 
     estimated_cum = []
     for t in np.arange(time_min, time_max + 1, 1):
