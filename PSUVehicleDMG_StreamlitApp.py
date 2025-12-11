@@ -356,35 +356,35 @@ def compute_cumulative_curves(df_segment, loc_min, loc_max, time_min, time_max, 
 # FUNCTION TO COMPUTE CUMULATIVE VEHICLES PASSED A SPECIFIC LOCATION
 def compute_cumulative_at_location(df_full, location, time_min, time_max):
     """
-    Compute cumulative vehicles that have passed a specific location by time t,
-    only tracking passages that occur within the [time_min, time_max] window.
+    COMPUTE CUMULATIVE VEHICLES THAT HAVE PASSED A SPECIFIC LOCATION BY TIME T,
+    ONLY TRACKING PASSAGES THAT OCCUR WITHIN THE [TIME_MIN, TIME_MAX] WINDOW.
     """
     if df_full.empty:
         return pd.DataFrame()
 
     passage_times = []
 
-    # Iterate over all unique vehicles in the full dataset
+    # ITERATE OVER ALL UNIQUE VEHICLES IN THE FULL DATASET
     for vid, group in df_full.groupby("vehicle_id"):
         group = group.sort_values("time")
 
-        # Find the first time where location >= target_location
+        # FIND THE FIRST TIME WHERE LOCATION >= TARGET_LOCATION
         passed = group[group["location"] >= location]
 
         if not passed.empty:
             passage_time = passed.iloc[0]["time"]
 
             # --- CRITICAL FIX ---
-            # ONLY count the passage if it occurs within the time window
+            # ONLY COUNT THE PASSAGE IF IT OCCURS WITHIN THE TIME WINDOW
             if passage_time >= time_min and passage_time <= time_max:
                 passage_times.append(passage_time)
 
     passage_times = sorted(passage_times)
 
-    # Compute cumulative counts (loop remains the same)
+    # COMPUTE CUMULATIVE COUNTS (LOOP REMAINS THE SAME)
     cum_data = []
     for t in np.arange(time_min, time_max + 1, 1):
-        # We only count passages that occurred <= t
+        # WE ONLY COUNT PASSAGES THAT OCCURRED <= T
         cum_count = sum(1 for pt in passage_times if pt <= t)
         cum_data.append({"time": t, "cumulative": cum_count})
 
@@ -420,74 +420,79 @@ def triangular_fundamental_diagram(u_f, w_b, k_j):
 # FUNCTION FOR 3-DETECTOR ESTIMATION
 def estimate_cumulative_3_detector(cum_1_df, cum_3_df, loc_1, loc_3, loc_2, u_f, w_b, k_j, time_min, time_max):
     """
-    Estimate cumulative at location 2 using 3-detector methodology with triangular FD.
-    Uses kinematic wave theory with triangular fundamental diagram to propagate traffic states.
-    cum_1_df, cum_3_df: DataFrames with 'time' and 'cumulative' columns
-    loc_1, loc_3, loc_2: detector locations (ft)
-    u_f, w_b, k_j: triangular FD parameters (mph, mph, veh/mi)
+    ESTIMATE CUMULATIVE AT LOCATION 2 USING 3-DETECTOR METHODOLOGY WITH TRIANGULAR FD.
+    THIS CORRECTED VERSION IMPLEMENTS THE MIN OPERATOR AND THE DELTA N SHIFT ROBUSTLY.
     """
     if cum_1_df.empty or cum_3_df.empty:
         return pd.DataFrame()
 
-    # CONVERT UNITS (corrected)
-    u_f_fps = u_f * 5280 / 3600  # free flow speed: mph to ft/s
-    w_b_fps = w_b * 5280 / 3600  # backward wave speed: mph to ft/s
-    k_j_veh_per_mi = k_j  # jam density: veh/mi
+    # CONVERT UNITS (CORRECTED)
+    u_f_fps = u_f * 5280 / 3600  # FREE FLOW SPEED: MPH TO FT/S
+    w_b_fps = w_b * 5280 / 3600  # BACKWARD WAVE SPEED: MPH TO FT/S
+    k_j_veh_per_mi = k_j  # JAM DENSITY: VEH/MI
 
     # CALCULATE SHIFTS
-    # 1. Upstream Time Shift (tau_U)
+    # 1. UPSTREAM TIME SHIFT (TAU_U) - FREE FLOW PROPAGATION
     tau_U = (loc_2 - loc_1) / u_f_fps
 
-    # 2. Downstream Time Shift (tau_D)
+    # 2. DOWNSTREAM TIME SHIFT (TAU_D) - CONGESTION WAVE PROPAGATION
     tau_D = (loc_3 - loc_2) / w_b_fps
 
-    # 3. Vertical Shift (Delta N)
-    # Distance in miles: (loc_3 - loc_2) / 5280
+    # 3. VERTICAL SHIFT (DELTA N) - STORAGE CAPACITY BETWEEN M AND D
+    # DISTANCE IN MILES: (LOC_3 - LOC_2) / 5280
     Delta_N = k_j_veh_per_mi * (loc_3 - loc_2) / 5280.0
+    # EXPECTED VALUE: 314 * 150 / 5280 ≈ 8.92 VEH
 
     # -----------------------------------------------------------------
-    # CRITICAL FIX: Robust Step Function Lookup (Helper Function)
+    # CRITICAL FIX: ROBUST STEP FUNCTION LOOKUP (HELPER FUNCTION)
     # -----------------------------------------------------------------
     def get_cumulative_count_robust(cum_df, t_lookup, time_min, time_max):
         """
-        Retrieves cumulative count N(t_lookup) for any time t_lookup (float).
-        N(t) is a step function; we need the count at the largest integer time <= t_lookup.
+        RETRIEVES CUMULATIVE COUNT N(T_LOOKUP) FOR ANY TIME T_LOOKUP (FLOAT).
+        N(T) IS A STEP FUNCTION; WE NEED THE COUNT AT THE LARGEST INTEGER TIME <= T_LOOKUP.
         """
-        # If t_lookup is before start time, count is 0
+        # IF T_LOOKUP IS BEFORE START TIME, COUNT IS 0
         if t_lookup < time_min:
             return 0
 
-        # Round the lookup time down to the largest available integer time
-        # This handles cases like t=4.999 or t=5.001 correctly
+        # ROUND THE LOOKUP TIME DOWN TO THE LARGEST AVAILABLE INTEGER TIME
+        # THIS HANDLES CASES LIKE T=4.999 OR T=5.001 CORRECTLY
         lookup_time = int(np.floor(t_lookup))
 
-        # Filter for times less than or equal to the lookup time
+        # FILTER FOR TIMES LESS THAN OR EQUAL TO THE LOOKUP TIME
         lookup_df = cum_df[cum_df["time"] <= lookup_time]
 
         if lookup_df.empty:
             return 0
 
-        # The max value in the filtered group is the cumulative count N(t)
-        # We must use the last recorded value if multiple steps occur at the same floor time.
-        # Since cum_df is generated at 1-second intervals, max is the safe approach.
+        # THE MAX VALUE IN THE FILTERED GROUP IS THE CUMULATIVE COUNT N(T)
+        # WE MUST USE THE LAST RECORDED VALUE IF MULTIPLE STEPS OCCUR AT THE SAME FLOOR TIME.
+        # SINCE CUM_DF IS GENERATED AT 1-SECOND INTERVALS, MAX IS THE SAFE APPROACH.
         return lookup_df["cumulative"].max()
 
     estimated_cum = []
+
+    # ITERATE THROUGH THE TIME SEGMENT
     for t in np.arange(time_min, time_max + 1, 1):
-        # 1. UPSTREAM PREDICTION (Free Flow Wave)
-        # N_U_pred = N_50(t - tau_U)
+
+        # 1. UPSTREAM PREDICTION (FREE FLOW WAVE)
+        # N_U_PRED = N_50(T - TAU_U)
         t_U = t - tau_U
         N_U_pred = get_cumulative_count_robust(cum_1_df, t_U, time_min, time_max)
 
-        # 2. DOWNSTREAM PREDICTION (Congestion Wave)
-        # N_D_pred = N_450(t + tau_D) - Delta_N
+        # 2. DOWNSTREAM PREDICTION (CONGESTION WAVE)
+        # N_D_PRED = N_450(T + TAU_D) - DELTA_N
         t_D = t + tau_D
         N_D_pred_raw = get_cumulative_count_robust(cum_3_df, t_D, time_min, time_max)
-        N_D_pred = max(0, N_D_pred_raw - Delta_N)  # Ensure count is non-negative
 
-        # UNIFIED PREDICTION: min(N_U_pred, N_D_pred)
+        # APPLY THE VERTICAL SHIFT (DELTA N) TO ACCOUNT FOR VEHICLE STORAGE
+        N_D_pred = max(0, N_D_pred_raw - Delta_N)
+
+        # 3. UNIFIED PREDICTION (POINTWISE MINIMUM)
+        # N_PRED_T = MIN(UPSTREAM PREDICTION, DOWNSTREAM PREDICTION)
         N_pred_t = min(N_U_pred, N_D_pred)
 
+        # THE FINAL RESULT MUST BE AN INTEGER (VEHICLE COUNT)
         estimated_cum.append({"time": t, "cumulative": int(N_pred_t)})
 
     return pd.DataFrame(estimated_cum)
