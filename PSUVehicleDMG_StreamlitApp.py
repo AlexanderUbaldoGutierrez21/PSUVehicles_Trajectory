@@ -883,7 +883,7 @@ if not merged_df.empty:
     fig_comp.data[0].name = "Actual"
     fig_comp.data[0].line.color = "#0D1B2A"
     fig_comp.data[1].name = "Estimated (3-Detector)"
-    fig_comp.data[1].line.color = "#4FB0C6"
+    fig_comp.data[1].line.color = "#7AD0D9"
     fig_comp.data[1].line.dash = "dash"
 
     fig_comp.update_layout(
